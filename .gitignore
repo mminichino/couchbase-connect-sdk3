@@ -37,3 +37,8 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Test files ###
+test.properties
+test.*.properties
+debug.log

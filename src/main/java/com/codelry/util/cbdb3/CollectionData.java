@@ -1,4 +1,4 @@
-package com.codelry.util;
+package com.codelry.util.cbdb3;
 
 public class CollectionData {
   private String name;

@@ -1,9 +1,8 @@
-package com.codelry.util;
+package com.codelry.util.cbdb3;
 
 import com.couchbase.client.dcp.Client;
 import com.couchbase.client.dcp.StreamFrom;
 import com.couchbase.client.dcp.StreamTo;
-import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.SecurityConfig;
@@ -36,8 +35,8 @@ import static java.util.Objects.requireNonNull;
 /**
  * Couchbase Stream Utility.
  */
-public class CouchbaseStream3 {
-  static final Logger LOGGER = LoggerFactory.getLogger(CouchbaseStream3.class);
+public class CouchbaseStream {
+  static final Logger LOGGER = LoggerFactory.getLogger(CouchbaseStream.class);
   private final String hostname;
   private final String username;
   private final String password;
@@ -52,7 +51,7 @@ public class CouchbaseStream3 {
   private final PriorityBlockingQueue<String> queue = new PriorityBlockingQueue<>();
   private Client client;
 
-  public CouchbaseStream3(String hostname, String username, String password, String bucket, Boolean ssl) {
+  public CouchbaseStream(String hostname, String username, String password, String bucket, Boolean ssl) {
     this.hostname = hostname;
     this.username = username;
     this.password = password;
@@ -63,7 +62,7 @@ public class CouchbaseStream3 {
     this.init();
   }
 
-  public CouchbaseStream3(String hostname, String username, String password, String bucket, Boolean ssl,
+  public CouchbaseStream(String hostname, String username, String password, String bucket, Boolean ssl,
                          String scope, String collection) {
     this.hostname = hostname;
     this.username = username;

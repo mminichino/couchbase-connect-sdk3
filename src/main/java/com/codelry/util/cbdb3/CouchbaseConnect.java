@@ -1,4 +1,4 @@
-package com.codelry.util;
+package com.codelry.util.cbdb3;
 
 import com.codelry.util.capella.*;
 import com.codelry.util.capella.exceptions.CapellaAPIError;
@@ -65,8 +65,8 @@ import java.util.stream.StreamSupport;
 /**
  * Couchbase SDK 3.x Connection Utility.
  */
-public final class CouchbaseConnect3 {
-  static final Logger LOGGER = LoggerFactory.getLogger(CouchbaseConnect3.class);
+public final class CouchbaseConnect {
+  static final Logger LOGGER = LoggerFactory.getLogger(CouchbaseConnect.class);
   private volatile Cluster cluster;
   private volatile Bucket bucket;
   private volatile Scope scope;
@@ -170,12 +170,12 @@ public final class CouchbaseConnect3 {
     }
 
     public CouchbaseBuilder username(final String name) {
-      this.password = name;
+      this.username = name;
       return this;
     }
 
-    public CouchbaseBuilder password(final String name) {
-      this.password = name;
+    public CouchbaseBuilder password(final String password) {
+      this.password = password;
       return this;
     }
 
@@ -252,12 +252,12 @@ public final class CouchbaseConnect3 {
       return this;
     }
 
-    public CouchbaseConnect3 build() {
-      return new CouchbaseConnect3(this);
+    public CouchbaseConnect build() {
+      return new CouchbaseConnect(this);
     }
   }
 
-  private CouchbaseConnect3(CouchbaseBuilder builder) {
+  private CouchbaseConnect(CouchbaseBuilder builder) {
     hostname = builder.hostname;
     username = builder.username;
     password = builder.password;
@@ -280,7 +280,7 @@ public final class CouchbaseConnect3 {
     if (enableDebug) {
       LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
       Configuration config = ctx.getConfiguration();
-      LoggerConfig loggerConfig = config.getLoggerConfig(CouchbaseConnect3.class.getName());
+      LoggerConfig loggerConfig = config.getLoggerConfig(CouchbaseConnect.class.getName());
       loggerConfig.setLevel(Level.DEBUG);
       ctx.updateLoggers();
     }
@@ -338,14 +338,20 @@ public final class CouchbaseConnect3 {
             authenticator = PasswordAuthenticator.create(username, password);
           }
 
+          LOGGER.debug("connecting as user {}", username);
+
           environment = ClusterEnvironment
               .builder()
               .timeoutConfig(timeOutConfiguration)
               .ioConfig(ioConfiguration)
               .securityConfig(secConfiguration)
               .build();
+
           cluster = Cluster.connect(connectString,
               ClusterOptions.clusterOptions(authenticator).environment(environment));
+
+          LOGGER.debug("{} cluster connected", hostname);
+
           if (!basic) {
             cluster.waitUntilReady(Duration.ofSeconds(15));
             try {
@@ -393,12 +399,12 @@ public final class CouchbaseConnect3 {
     clusterInfo = mapper.createObjectNode();
   }
 
-  public CouchbaseStream3 stream(String bucketName) {
-    return new CouchbaseStream3(hostname, username, password, bucketName, true);
+  public CouchbaseStream stream(String bucketName) {
+    return new CouchbaseStream(hostname, username, password, bucketName, true);
   }
 
-  public CouchbaseStream3 stream(String bucketName, String scopeName, String collectionName) {
-    return new CouchbaseStream3(hostname, username, password, bucketName, true, scopeName, collectionName);
+  public CouchbaseStream stream(String bucketName, String scopeName, String collectionName) {
+    return new CouchbaseStream(hostname, username, password, bucketName, true, scopeName, collectionName);
   }
 
   public String hostValue() {
@@ -590,6 +596,9 @@ public final class CouchbaseConnect3 {
   }
 
   public void bucketCreate(String name, int quota, int replicas, BucketType bucketType, StorageBackend storageBackend) {
+    if (isBucket(name)) {
+      return;
+    }
     if (quota == 0) {
       quota = 128;
     }

@@ -1,4 +1,4 @@
-package com.codelry.util;
+package com.codelry.util.cbdb3;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
