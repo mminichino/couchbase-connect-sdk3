@@ -1,8 +1,5 @@
 package com.codelry.util.cbdb3;
 
-import com.codelry.util.capella.*;
-import com.codelry.util.capella.exceptions.CapellaAPIError;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Assertions;
@@ -12,8 +9,8 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.Properties;
 
-public class CapellaDriverTest {
-  private static final Logger LOGGER = LogManager.getLogger(CapellaDriverTest.class);
+public class CapellaDriver1Test {
+  private static final Logger LOGGER = LogManager.getLogger(CapellaDriver1Test.class);
   private static final String propertyFile = "test.capella.properties";
   public static Properties properties;
   public static final String CLUSTER_HOST = "couchbase.hostname";
@@ -22,12 +19,18 @@ public class CapellaDriverTest {
   public static final String CLUSTER_BUCKET = "couchbase.bucket";
   public static final String COUCHBASE_SCOPE = "couchbase.scope";
   public static final String COUCHBASE_COLLECTION = "couchbase.collection";
+  public static final String CAPELLA_PROJECT_NAME = "capella.project.name";
+  public static final String CAPELLA_DATABASE_NAME = "capella.database.name";
+  public static final String CAPELLA_USER_EMAIL = "capella.user.email";
+  public static final String CAPELLA_TOKEN = "capella.token";
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";
   public static final String DEFAULT_BUCKET = "test";
   public static final String DEFAULT_SCOPE = "test";
   public static final String DEFAULT_COLLECTION = "userdata";
+  public static final String DEFAULT_PROJECT_NAME = "junit";
+  public static final String DEFAULT_DATABASE_NAME = "testdb";
 
   @BeforeAll
   public static void setUpBeforeClass() {
@@ -50,6 +53,10 @@ public class CapellaDriverTest {
     String bucket = properties.getProperty(CLUSTER_BUCKET, DEFAULT_BUCKET);
     String scope = properties.getProperty(COUCHBASE_SCOPE, DEFAULT_SCOPE);
     String collection = properties.getProperty(COUCHBASE_COLLECTION, DEFAULT_COLLECTION);
+    String project = properties.getProperty(CAPELLA_PROJECT_NAME, DEFAULT_PROJECT_NAME);
+    String database = properties.getProperty(CAPELLA_DATABASE_NAME, DEFAULT_DATABASE_NAME);
+    String email = properties.getProperty(CAPELLA_USER_EMAIL);
+    String token = properties.getProperty(CAPELLA_TOKEN);
 
     LOGGER.info("hostname: {}", hostname);
     LOGGER.info("username: {}", username);
@@ -59,6 +66,7 @@ public class CapellaDriverTest {
         .host(hostname)
         .username(username)
         .password(password)
+        .capella(project, database, email, token)
         .build();
     System.out.println(db.clusterVersion);
     boolean result = db.isBucket(bucket);

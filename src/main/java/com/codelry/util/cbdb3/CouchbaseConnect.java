@@ -236,6 +236,14 @@ public final class CouchbaseConnect {
       return this;
     }
 
+    public CouchbaseBuilder capella(final String project, final String database, final String email, final String token) {
+      properties.setProperty(CAPELLA_PROJECT_NAME, project);
+      properties.setProperty(CAPELLA_DATABASE_NAME, database);
+      properties.setProperty(CAPELLA_USER_EMAIL, email);
+      properties.setProperty(CAPELLA_TOKEN, token);
+      return this;
+    }
+
     public CouchbaseBuilder fromProperties(Properties properties) {
       this.hostname = properties.getProperty(COUCHBASE_HOST, DEFAULT_HOSTNAME);
       this.username = properties.getProperty(COUCHBASE_USER, DEFAULT_USER);
@@ -381,8 +389,13 @@ public final class CouchbaseConnect {
     return properties.getProperty(CAPELLA_DATABASE_ID) != null || properties.getProperty(CAPELLA_DATABASE_NAME) != null;
   }
 
+  private boolean capellaUserSet() {
+    return properties.getProperty(CAPELLA_USER_EMAIL) != null || properties.getProperty(CAPELLA_USER_ID) != null;
+  }
+
   public void connectCapella() {
-    if (capellaTokenSet() && capellaProjectSet() && capellaDatabaseSet()) {
+    if (capellaTokenSet() && capellaProjectSet() && capellaDatabaseSet() && capellaUserSet()) {
+      LOGGER.info("Connecting to capella cluster");
       CouchbaseCapella capella = CouchbaseCapella.getInstance(properties);
       CapellaOrganization organization = CapellaOrganization.getInstance(capella);
       CapellaProject project = CapellaProject.getInstance(organization);

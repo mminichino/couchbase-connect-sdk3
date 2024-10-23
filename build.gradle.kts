@@ -27,7 +27,7 @@ dependencies {
     implementation("com.couchbase.client:java-client:3.7.2")
     implementation("com.couchbase.client:dcp-client:0.51.0")
     implementation("com.codelry.util:restfull-core:1.0.1")
-    implementation("com.codelry.util:capella-api:1.0.1")
+    implementation("com.codelry.util:capella-api:1.0.3")
 }
 
 java {

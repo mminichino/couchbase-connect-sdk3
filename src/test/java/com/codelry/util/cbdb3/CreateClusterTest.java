@@ -2,6 +2,7 @@ package com.codelry.util.cbdb3;
 
 import com.codelry.util.capella.*;
 import com.codelry.util.capella.exceptions.CapellaAPIError;
+import com.codelry.util.capella.logic.AvailabilityType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -40,7 +41,7 @@ public class CreateClusterTest {
     CapellaOrganization organization = CapellaOrganization.getInstance(capella);
     CapellaProject project = CapellaProject.getInstance(organization);
     Assertions.assertNotNull(project.getId());
-    CapellaCluster cluster = CapellaCluster.getInstance(project, new CapellaCluster.ClusterConfig());
+    CapellaCluster cluster = CapellaCluster.getInstance(project, new CapellaCluster.ClusterConfig().singleNode());
     CapellaAllowedCIDR cidr = CapellaAllowedCIDR.getInstance(cluster);
     cidr.createAllowedCIDR(allowedCIDR);
     CapellaCredentials user = CapellaCredentials.getInstance(cluster);
