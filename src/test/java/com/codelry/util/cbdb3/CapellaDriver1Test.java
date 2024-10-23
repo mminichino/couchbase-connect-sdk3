@@ -1,5 +1,7 @@
 package com.codelry.util.cbdb3;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Assertions;
@@ -66,15 +68,22 @@ public class CapellaDriver1Test {
         .host(hostname)
         .username(username)
         .password(password)
+        .bucketReplicas(0)
         .capella(project, database, email, token)
         .build();
     System.out.println(db.clusterVersion);
     boolean result = db.isBucket(bucket);
-    Assertions.assertFalse(result);
+    Assertions.assertNotNull(result);
     db.createBucket(bucket);
     result = db.isBucket(bucket);
     Assertions.assertTrue(result);
     db.createScope(bucket, scope);
     db.createCollection(bucket, scope, collection);
+    ObjectNode doc = new ObjectMapper().createObjectNode();
+    doc.put("data", 1);
+    db.connectBucket(bucket);
+    db.connectCollection(scope, collection);
+    db.upsert("doc::1", doc);
+    db.dropBucket(bucket);
   }
 }

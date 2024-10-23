@@ -2,6 +2,7 @@ package com.codelry.util.cbdb3;
 
 import com.codelry.util.capella.*;
 import com.codelry.util.capella.exceptions.CapellaAPIError;
+import com.codelry.util.capella.exceptions.NotFoundException;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.NetworkResolution;
@@ -440,12 +441,32 @@ public final class CouchbaseConnect {
     return bucketName;
   }
 
+  public String getScopeName() {
+    return scopeName;
+  }
+
+  public String getCollectionName() {
+    return collectionName;
+  }
+
   public Cluster getCluster() {
     return cluster;
   }
 
+  public Scope getScope() {
+    return scope;
+  }
+
+  public Collection getCollection() {
+    return collection;
+  }
+
+  public String getKeyspace() {
+    return String.format("%s.%s.%s", bucketName, scopeName, collectionName);
+  }
+
   private void logError(Exception error, String connectString) {
-    LOGGER.error(String.format("Connection string: %s", connectString));
+    LOGGER.error("Connection string: {}", connectString);
     LOGGER.error(error.getMessage(), error);
   }
 
@@ -507,6 +528,11 @@ public final class CouchbaseConnect {
     return results.contains(bucket);
   }
 
+  public Boolean isBucket() {
+    List<String> results = listBuckets();
+    return results.contains(bucketName);
+  }
+
   public Bucket connectBucket(String name) {
     this.bucketName = name;
     bucket = cluster.bucket(bucketName);
@@ -549,6 +575,19 @@ public final class CouchbaseConnect {
     return collection;
   }
 
+  public void connectKeyspace(String bucketName, String scopeName, String collectionName) {
+    this.bucketName = bucketName;
+    this.scopeName = scopeName;
+    this.collectionName = collectionName;
+    connectBucket(bucketName);
+    connectScope(scopeName);
+    connectCollection(collectionName);
+  }
+
+  public void connectKeyspace() {
+    connectKeyspace(bucketName, scopeName, collectionName);
+  }
+
   public ReactiveCollection reactiveCollection() {
     if (collection == null) {
       throw new RuntimeException("Collection is not connected");
@@ -572,6 +611,23 @@ public final class CouchbaseConnect {
       return StorageBackend.MAGMA;
     }
     return StorageBackend.COUCHSTORE;
+  }
+
+  public static ConflictResolutionType convertConflictResolutionType(String conflictResolutionType) {
+    switch (conflictResolutionType.toLowerCase()) {
+      case "custom":
+        return ConflictResolutionType.CUSTOM;
+      case "timestamp":
+      case "lww":
+        return ConflictResolutionType.TIMESTAMP;
+      default:
+        return ConflictResolutionType.SEQUENCE_NUMBER;
+    }
+  }
+
+  public void createBucket() {
+    int quota = getMemQuota();
+    bucketCreate(bucketName, quota, bucketReplicas, bucketType, bucketStorage);
   }
 
   public void createBucket(String name) {
@@ -641,11 +697,23 @@ public final class CouchbaseConnect {
 
   public void dropBucket(String name) {
     try {
-      BucketManager bucketMgr = cluster.buckets();
-      bucketMgr.dropBucket(name);
-    } catch (BucketNotFoundException e) {
+      if (capella != null) {
+        CapellaBucket bucket = CapellaBucket.getInstance(capella, name);
+        bucket.delete();
+      } else {
+        BucketManager bucketMgr = cluster.buckets();
+        bucketMgr.dropBucket(name);
+      }
+    } catch (BucketNotFoundException | NotFoundException e) {
       LOGGER.debug("Drop: Bucket {} does not exist", name);
+    } catch (CapellaAPIError e) {
+      LOGGER.error("dropBucket: Capella API error", e);
+      throw new RuntimeException("dropBucket: Capella API error", e);
     }
+  }
+
+  public void dropBucket() {
+    dropBucket(bucketName);
   }
 
   public void createScope(String bucketName, String scopeName) {
@@ -661,6 +729,10 @@ public final class CouchbaseConnect {
     }
   }
 
+  public void createScope() {
+    createScope(bucketName, scopeName);
+  }
+
   public void createCollection(String bucketName, String scopeName, String collectionName) {
     if (Objects.equals(collectionName, "_default")) {
       return;
@@ -672,6 +744,10 @@ public final class CouchbaseConnect {
     } catch (CollectionExistsException e) {
       LOGGER.debug("Collection {} already exists in cluster", collectionName);
     }
+  }
+
+  public void createCollection() {
+    createCollection(bucketName, scopeName, collectionName);
   }
 
   public boolean collectionExists(String bucketName, String scopeName, String collectionName) {
