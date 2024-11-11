@@ -9,15 +9,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Properties;
 
 public class CapellaDriver2Test {
   private static final Logger LOGGER = LogManager.getLogger(CapellaDriver2Test.class);
   private static final String propertyFile = "test.capella.properties";
   public static Properties properties;
-  public static final String DEFAULT_BUCKET = "test";
-  public static final String DEFAULT_SCOPE = "test";
-  public static final String DEFAULT_COLLECTION = "userdata";
 
   @BeforeAll
   public static void setUpBeforeClass() {
@@ -37,16 +35,17 @@ public class CapellaDriver2Test {
     CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
     CouchbaseConnect db = dbBuilder
         .fromProperties(properties)
-        .bucketReplicas(0)
         .build();
     System.out.println(db.clusterVersion);
     boolean result = db.isBucket();
-    Assertions.assertNotNull(result);
+    LOGGER.debug("isBucket: {}", result);
     db.createBucket();
     result = db.isBucket();
     Assertions.assertTrue(result);
     db.createScope();
     db.createCollection();
+    db.createPrimaryIndex();
+    db.createSecondaryIndex("idx_test", List.of("data"));
     ObjectNode doc = new ObjectMapper().createObjectNode();
     doc.put("data", 1);
     db.connectKeyspace();

@@ -108,7 +108,7 @@ public final class CouchbaseConnect {
   private final String hostname;
   private final String username;
   private final String password;
-  private final int bucketReplicas;
+  private int bucketReplicas;
   private final BucketType bucketType;
   private final StorageBackend bucketStorage;
   private final String rootCert;
@@ -461,6 +461,14 @@ public final class CouchbaseConnect {
     return collection;
   }
 
+  public ReactiveCollection getReactiveCollection() {
+    if (collection != null) {
+      return collection.reactive();
+    } else {
+      throw new RuntimeException("Collection is not connected");
+    }
+  }
+
   public String getKeyspace() {
     return String.format("%s.%s.%s", bucketName, scopeName, collectionName);
   }
@@ -495,6 +503,11 @@ public final class CouchbaseConnect {
         entry.set("services", services);
 
         hostMap.add(entry);
+      }
+
+      if (hostMap.size() == 1) {
+        bucketReplicas = 0;
+        LOGGER.debug("Single node cluster: setting bucket replicas to {}", bucketReplicas);
       }
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
@@ -761,7 +774,19 @@ public final class CouchbaseConnect {
     }
   }
 
+  public void createPrimaryIndex() {
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, bucketReplicas);
+  }
+
+  public void createPrimaryIndex(String bucketName, String scopeName, String collectionName) {
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, bucketReplicas);
+  }
+
   public void createPrimaryIndex(String bucketName, String scopeName, String collectionName, int replicaCount) {
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, replicaCount);
+  }
+
+  private void createPrimaryIndexInternal(String bucketName, String scopeName, String collectionName, int replicaCount) {
     Bucket bucket = cluster.bucket(bucketName);
     Scope scope = bucket.scope(scopeName);
     Collection collection = scope.collection(collectionName);
@@ -772,11 +797,24 @@ public final class CouchbaseConnect {
         .numReplicas(replicaCount)
         .ignoreIfExists(true);
 
+    LOGGER.debug("Creating Primary Index: Collection: {} replicas: {}", collectionName, replicaCount);
     queryIndexMgr.createPrimaryIndex(options);
+    queryIndexMgr.watchIndexes(Collections.singletonList("#primary"), Duration.ofSeconds(30));
   }
 
-  public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName,
-                                   List<String> indexKeys, int replicaCount) {
+  public void createSecondaryIndex(String indexName, List<String> indexKeys) {
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, bucketReplicas);
+  }
+
+  public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys) {
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, bucketReplicas);
+  }
+
+  public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys, int replicaCount) {
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, replicaCount);
+  }
+
+  private void createSecondaryIndexInternal(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys, int replicaCount) {
     Bucket bucket = cluster.bucket(bucketName);
     Scope scope = bucket.scope(scopeName);
     Collection collection = scope.collection(collectionName);
@@ -787,9 +825,9 @@ public final class CouchbaseConnect {
         .numReplicas(replicaCount)
         .ignoreIfExists(true);
 
-    LOGGER.debug("Creating GSI: {} {} {}", indexName, indexKeys, options);
+    LOGGER.debug("Creating GSI: Collection: {} Name: {} Fields: {} replicas: {}", collectionName, indexName, indexKeys, replicaCount);
     queryIndexMgr.createIndex(indexName, indexKeys, options);
-    queryIndexMgr.watchIndexes(Collections.singletonList(indexName), Duration.ofSeconds(10));
+    queryIndexMgr.watchIndexes(Collections.singletonList(indexName), Duration.ofSeconds(30));
   }
 
   public void createSearchIndex(JsonNode config) {
@@ -1146,7 +1184,7 @@ public final class CouchbaseConnect {
       for (IndexData index : bucket.getIndexes()) {
         int replicas = index.getNumReplicas();
         if (replicas < 0) {
-          replicas = (int) getIndexNodeCount() - 1;
+          replicas = bucketReplicas;
         }
         final int replicaNum = replicas;
         try {

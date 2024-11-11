@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Properties;
 
 public class CapellaDriver1Test {
@@ -68,17 +69,18 @@ public class CapellaDriver1Test {
         .host(hostname)
         .username(username)
         .password(password)
-        .bucketReplicas(0)
         .capella(project, database, email, token)
         .build();
     System.out.println(db.clusterVersion);
     boolean result = db.isBucket(bucket);
-    Assertions.assertNotNull(result);
+    LOGGER.debug("isBucket: {}", result);
     db.createBucket(bucket);
     result = db.isBucket(bucket);
     Assertions.assertTrue(result);
     db.createScope(bucket, scope);
     db.createCollection(bucket, scope, collection);
+    db.createPrimaryIndex(bucket, scope, collection);
+    db.createSecondaryIndex(bucket, scope, collection, "idx_test", List.of("data"));
     ObjectNode doc = new ObjectMapper().createObjectNode();
     doc.put("data", 1);
     db.connectBucket(bucket);
