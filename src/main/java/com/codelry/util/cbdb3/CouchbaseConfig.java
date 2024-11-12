@@ -22,6 +22,8 @@ public class CouchbaseConfig {
   public static final String COUCHBASE_MAX_PARALLELISM = "couchbase.maxParallelism";
   public static final String COUCHBASE_BUCKET_TYPE = "couchbase.bucketType";
   public static final String COUCHBASE_STORAGE_TYPE = "couchbase.storageBackend";
+  public static final String COUCHBASE_QUICK_CONNECT = "couchbase.quickConnect";
+  public static final String COUCHBASE_SOFT_FAILURE = "couchbase.softFailure";
   public static final String COUCHBASE_DEBUG_MODE = "couchbase.debug";
   public static final String CAPELLA_PROJECT_NAME = "capella.project.name";
   public static final String CAPELLA_DATABASE_NAME = "capella.database.name";
@@ -49,6 +51,7 @@ public class CouchbaseConfig {
   private StorageBackend bucketStorage = StorageBackend.COUCHSTORE;
   private int ttlSeconds = 0;
   private Boolean basic = false;
+  private Boolean softFailure = false;
   private final Properties properties = new Properties();
 
   public CouchbaseConfig ttl(int value) {
@@ -138,8 +141,13 @@ public class CouchbaseConfig {
     return this;
   }
 
-  public CouchbaseConfig basic() {
-    this.basic = true;
+  public CouchbaseConfig quickConnect(final Boolean mode) {
+    this.basic = mode;
+    return this;
+  }
+
+  public CouchbaseConfig softFailure(final Boolean mode) {
+    this.softFailure = mode;
     return this;
   }
 
@@ -167,6 +175,8 @@ public class CouchbaseConfig {
     this.ttlSeconds = Integer.parseInt(properties.getProperty(COUCHBASE_TTL, "0"));
     this.bucketType = convertBucketType(properties.getProperty(COUCHBASE_BUCKET_TYPE, "couchbase"));
     this.bucketStorage = convertStorageBackend(properties.getProperty(COUCHBASE_STORAGE_TYPE, "couchstore"));
+    this.basic = properties.getProperty(COUCHBASE_QUICK_CONNECT, "false").equals("true");
+    this.softFailure = properties.getProperty(COUCHBASE_SOFT_FAILURE, "false").equals("true");
     this.enableDebug = properties.getProperty(COUCHBASE_DEBUG_MODE, "false").equals("true");
     this.properties.putAll(properties);
     return this;
@@ -238,6 +248,10 @@ public class CouchbaseConfig {
 
   public Boolean getBasic() {
     return basic;
+  }
+
+  public Boolean getSoftFailure() {
+    return softFailure;
   }
 
   public Properties getProperties() {

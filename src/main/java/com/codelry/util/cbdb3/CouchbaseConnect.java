@@ -135,6 +135,7 @@ public final class CouchbaseConnect {
     bucketStorage = config.getBucketStorage();
     maxParallelism = config.getMaxParallelism();
     boolean basic = config.getBasic();
+    boolean softFailure = config.getSoftFailure();
     properties.putAll(config.getProperties());
     String couchbasePrefix;
 
@@ -219,6 +220,9 @@ public final class CouchbaseConnect {
       }
     } catch(Exception e) {
       logError(e, connectString);
+      if (!softFailure) {
+        throw new RuntimeException(e.getMessage(), e);
+      }
     }
   }
 
@@ -293,6 +297,10 @@ public final class CouchbaseConnect {
     return cluster;
   }
 
+  public Bucket getBucket() {
+    return bucket;
+  }
+
   public Scope getScope() {
     return scope;
   }
@@ -302,11 +310,10 @@ public final class CouchbaseConnect {
   }
 
   public ReactiveCollection getReactiveCollection() {
-    if (collection != null) {
-      return collection.reactive();
-    } else {
+    if (collection == null) {
       throw new RuntimeException("Collection is not connected");
     }
+    return collection.reactive();
   }
 
   public String getKeyspace() {
@@ -388,46 +395,39 @@ public final class CouchbaseConnect {
     return results.contains(bucketName);
   }
 
-  public Bucket connectBucket(String name) {
+  public void connectBucket(String name) {
     this.bucketName = name;
     bucket = cluster.bucket(bucketName);
     bucket.waitUntilReady(Duration.ofSeconds(5));
-    return bucket;
   }
 
-  public Bucket connectBucket() {
+  public void connectBucket() {
     bucket = cluster.bucket(bucketName);
     bucket.waitUntilReady(Duration.ofSeconds(5));
-    return bucket;
   }
 
-  public Scope connectScope(String name) {
+  public void connectScope(String name) {
     this.scopeName = name;
     scope = bucket.scope(scopeName);
-    return scope;
   }
 
-  public Scope connectScope() {
+  public void connectScope() {
     scope = bucket.scope(scopeName);
-    return scope;
   }
 
-  public Collection connectCollection(String name) {
+  public void connectCollection(String name) {
     this.collectionName = name;
     collection = scope.collection(collectionName);
-    return collection;
   }
 
-  public Collection connectCollection(String scopeName, String collectionName) {
+  public void connectCollection(String scopeName, String collectionName) {
     this.scopeName = scopeName;
     this.collectionName = collectionName;
     collection = bucket.scope(scopeName).collection(collectionName);
-    return collection;
   }
 
-  public Collection connectCollection() {
+  public void connectCollection() {
     collection = bucket.scope(scopeName).collection(collectionName);
-    return collection;
   }
 
   public void connectKeyspace(String bucketName, String scopeName, String collectionName) {
@@ -441,13 +441,6 @@ public final class CouchbaseConnect {
 
   public void connectKeyspace() {
     connectKeyspace(bucketName, scopeName, collectionName);
-  }
-
-  public ReactiveCollection reactiveCollection() {
-    if (collection == null) {
-      throw new RuntimeException("Collection is not connected");
-    }
-    return collection.reactive();
   }
 
   public static BucketType convertBucketType(String bucketType) {
