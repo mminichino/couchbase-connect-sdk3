@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.codelry.util"
-version = "1.0.1"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -24,7 +24,7 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-core:2.17.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     implementation("org.apache.commons:commons-configuration2:2.11.0")
-    implementation("com.couchbase.client:java-client:3.7.2")
+    implementation("com.couchbase.client:java-client:3.7.5")
     implementation("com.couchbase.client:dcp-client:0.51.0")
     implementation("com.codelry.util:restfull-core:1.0.1")
     implementation("com.codelry.util:capella-api:1.0.5")

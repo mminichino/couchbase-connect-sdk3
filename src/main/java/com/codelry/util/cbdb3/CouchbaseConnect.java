@@ -73,57 +73,28 @@ public final class CouchbaseConnect {
   private volatile Scope scope;
   private volatile Collection collection;
   private volatile ClusterEnvironment environment;
+  private static CouchbaseConnect instance;
   public static final Properties properties = new Properties();
-  public static final String COUCHBASE_HOST = "couchbase.hostname";
-  public static final String COUCHBASE_USER = "couchbase.username";
-  public static final String COUCHBASE_PASSWORD = "couchbase.password";
-  public static final String COUCHBASE_BUCKET = "couchbase.bucket";
-  public static final String COUCHBASE_SCOPE = "couchbase.scope";
-  public static final String COUCHBASE_COLLECTION = "couchbase.collection";
-  public static final String COUCHBASE_CLIENT_CERTIFICATE = "couchbase.client.cert";
-  public static final String COUCHBASE_ROOT_CERTIFICATE = "couchbase.ca.cert";
-  public static final String COUCHBASE_KEYSTORE_TYPE = "couchbase.keystore.type";
-  public static final String COUCHBASE_SSL_MODE = "couchbase.sslMode";
-  public static final String COUCHBASE_DEBUG_MODE = "couchbase.debug";
-  public static final String CAPELLA_ORGANIZATION_NAME = "capella.organization.name";
-  public static final String CAPELLA_ORGANIZATION_ID = "capella.organization.id";
   public static final String CAPELLA_PROJECT_NAME = "capella.project.name";
   public static final String CAPELLA_PROJECT_ID = "capella.project.id";
   public static final String CAPELLA_DATABASE_NAME = "capella.database.name";
   public static final String CAPELLA_DATABASE_ID = "capella.database.id";
-  public static final String CAPELLA_COLUMNAR_NAME = "capella.columnar.name";
-  public static final String CAPELLA_COLUMNAR_ID = "capella.columnar.id";
   public static final String CAPELLA_TOKEN = "capella.token";
-  public static final String CAPELLA_API_HOST = "capella.api.host";
   public static final String CAPELLA_USER_EMAIL = "capella.user.email";
   public static final String CAPELLA_USER_ID = "capella.user.id";
-  public static final String DEFAULT_USER = "Administrator";
-  public static final String DEFAULT_PASSWORD = "password";
-  public static final String DEFAULT_HOSTNAME = "127.0.0.1";
-  public static final Boolean DEFAULT_SSL_MODE = true;
-  public static final String DEFAULT_SSL_SETTING = "true";
-  public static final String CAPELLA_DEFAULT_PROJECT_NAME = "default";
-  public static final String CAPELLA_DEFAULT_API_HOST = "cloudapi.cloud.couchbase.com";
-  private static final Object STARTUP_COORDINATOR = new Object();
-  private final String hostname;
-  private final String username;
-  private final String password;
+  private String hostname;
+  private String username;
+  private String password;
   private int bucketReplicas;
-  private final BucketType bucketType;
-  private final StorageBackend bucketStorage;
-  private final String rootCert;
-  private final String clientCert;
-  private final KeyStoreType keyStoreType;
-  private String project;
-  private String database;
-  private boolean external;
+  private BucketType bucketType;
+  private StorageBackend bucketStorage;
+  private String rootCert;
   private String bucketName;
   private String scopeName;
   private String collectionName;
-  private final Boolean useSsl;
+  private Boolean useSsl;
   public int adminPort;
-  public int eventingPort;
-  private final int ttlSeconds;
+  private int ttlSeconds;
   private static int maxParallelism;
   private final ObjectMapper mapper = new ObjectMapper();
   private JsonNode clusterInfo = mapper.createObjectNode();
@@ -134,171 +105,46 @@ public final class CouchbaseConnect {
   public int buildNumber;
   public String clusterEdition;
   public CapellaCluster capella;
-  private final boolean enableDebug;
-  private final boolean basic;
+  private boolean enableDebug;
   private final ArrayNode hostMap = mapper.createArrayNode();
 
-  /**
-   * Builder Class.
-   */
-  public static class CouchbaseBuilder {
-    private String hostname = DEFAULT_HOSTNAME;
-    private String username = DEFAULT_USER;
-    private String password = DEFAULT_PASSWORD;
-    private String rootCert;
-    private String clientCert;
-    private KeyStoreType keyStoreType = KeyStoreType.PKCS12;
-    private Boolean sslMode = DEFAULT_SSL_MODE;
-    private Boolean enableDebug = false;
-    private String bucketName;
-    private String scopeName;
-    private String collectionName;
-    private int bucketReplicas = 1;
-    private BucketType bucketType = BucketType.COUCHBASE;
-    private StorageBackend bucketStorage = StorageBackend.COUCHSTORE;
-    private int ttlSeconds = 0;
-    private Boolean basic = false;
-    private final Properties properties = new Properties();
+  private CouchbaseConnect() {}
 
-    public CouchbaseBuilder ttl(int value) {
-      this.ttlSeconds = value;
-      return this;
+  public static CouchbaseConnect getInstance() {
+    if (instance == null) {
+      instance = new CouchbaseConnect();
     }
-
-    public CouchbaseBuilder host(final String name) {
-      this.hostname = name;
-      return this;
-    }
-
-    public CouchbaseBuilder username(final String name) {
-      this.username = name;
-      return this;
-    }
-
-    public CouchbaseBuilder password(final String password) {
-      this.password = password;
-      return this;
-    }
-
-    public CouchbaseBuilder bucketReplicas(final int count) {
-      this.bucketReplicas = count;
-      return this;
-    }
-
-    public CouchbaseBuilder bucketType(final String bucketType) {
-      this.bucketType = convertBucketType(bucketType);
-      return this;
-    }
-
-    public CouchbaseBuilder bucketStorage(final String storageBackend) {
-      this.bucketStorage = convertStorageBackend(storageBackend);
-      return this;
-    }
-
-    public CouchbaseBuilder rootCert(final String name) {
-      this.rootCert = name;
-      return this;
-    }
-
-    public CouchbaseBuilder clientKeyStore(final String name) {
-      this.clientCert = name;
-      return this;
-    }
-
-    public CouchbaseBuilder keyStoreType(final KeyStoreType type) {
-      this.keyStoreType = type;
-      return this;
-    }
-
-    public CouchbaseBuilder connect(final String host, final String user, final String password) {
-      this.hostname = host;
-      this.username = user;
-      this.password = password;
-      return this;
-    }
-
-    public CouchbaseBuilder ssl(final Boolean mode) {
-      this.sslMode = mode;
-      return this;
-    }
-
-    public CouchbaseBuilder bucket(final String name) {
-      this.bucketName = name;
-      return this;
-    }
-
-    public CouchbaseBuilder enableDebug(final Boolean mode) {
-      this.enableDebug = mode;
-      return this;
-    }
-
-    public CouchbaseBuilder basic() {
-      this.basic = true;
-      return this;
-    }
-
-    public CouchbaseBuilder capella(final String project, final String database, final String email, final String token) {
-      properties.setProperty(CAPELLA_PROJECT_NAME, project);
-      properties.setProperty(CAPELLA_DATABASE_NAME, database);
-      properties.setProperty(CAPELLA_USER_EMAIL, email);
-      properties.setProperty(CAPELLA_TOKEN, token);
-      return this;
-    }
-
-    public CouchbaseBuilder fromProperties(Properties properties) {
-      this.hostname = properties.getProperty(COUCHBASE_HOST, DEFAULT_HOSTNAME);
-      this.username = properties.getProperty(COUCHBASE_USER, DEFAULT_USER);
-      this.password = properties.getProperty(COUCHBASE_PASSWORD, DEFAULT_PASSWORD);
-      this.clientCert = properties.getProperty(COUCHBASE_CLIENT_CERTIFICATE);
-      this.rootCert = properties.getProperty(COUCHBASE_ROOT_CERTIFICATE);
-      this.keyStoreType = KeyStoreType.valueOf(properties.getProperty(COUCHBASE_KEYSTORE_TYPE, "PKCS12").toUpperCase());
-      this.bucketName = properties.getProperty(COUCHBASE_BUCKET, "default");
-      this.scopeName = properties.getProperty(COUCHBASE_SCOPE, "_default");
-      this.collectionName = properties.getProperty(COUCHBASE_COLLECTION, "_default");
-      this.sslMode = properties.getProperty(COUCHBASE_SSL_MODE, DEFAULT_SSL_SETTING).equals("true");
-      this.enableDebug = properties.getProperty(COUCHBASE_DEBUG_MODE, "false").equals("true");
-      this.properties.putAll(properties);
-      return this;
-    }
-
-    public CouchbaseConnect build() {
-      return new CouchbaseConnect(this);
-    }
+    return instance;
   }
 
-  private CouchbaseConnect(CouchbaseBuilder builder) {
-    hostname = builder.hostname;
-    username = builder.username;
-    password = builder.password;
-    rootCert = builder.rootCert;
-    clientCert = builder.clientCert;
-    keyStoreType = builder.keyStoreType;
-    enableDebug = builder.enableDebug;
-    useSsl = builder.sslMode;
-    ttlSeconds = builder.ttlSeconds;
-    bucketName = builder.bucketName;
-    scopeName = builder.scopeName;
-    collectionName = builder.collectionName;
-    bucketReplicas = builder.bucketReplicas;
-    bucketType = builder.bucketType;
-    bucketStorage = builder.bucketStorage;
-    maxParallelism = 0;
-    basic = builder.basic;
-    properties.putAll(builder.properties);
+  public void connect(CouchbaseConfig config) {
+    hostname = config.getHostname();
+    username = config.getUsername();
+    password = config.getPassword();
+    rootCert = config.getRootCert();
+    String clientCert = config.getClientCert();
+    KeyStoreType keyStoreType = config.getKeyStoreType();
+    enableDebug = config.getEnableDebug();
+    useSsl = config.getSslMode();
+    ttlSeconds = config.getTtlSeconds();
+    bucketName = config.getBucketName();
+    scopeName = config.getScopeName();
+    collectionName = config.getCollectionName();
+    bucketReplicas = config.getBucketReplicas();
+    bucketType = config.getBucketType();
+    bucketStorage = config.getBucketStorage();
+    maxParallelism = config.getMaxParallelism();
+    boolean basic = config.getBasic();
+    properties.putAll(config.getProperties());
+    String couchbasePrefix;
 
     if (enableDebug) {
       LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
-      Configuration config = ctx.getConfiguration();
-      LoggerConfig loggerConfig = config.getLoggerConfig(CouchbaseConnect.class.getName());
+      Configuration configuration = ctx.getConfiguration();
+      LoggerConfig loggerConfig = configuration.getLoggerConfig(CouchbaseConnect.class.getName());
       loggerConfig.setLevel(Level.DEBUG);
       ctx.updateLoggers();
     }
-
-    connect();
-  }
-
-  public void connect() {
-    String couchbasePrefix;
 
     if (useSsl) {
       couchbasePrefix = "couchbases://";
@@ -310,71 +156,69 @@ public final class CouchbaseConnect {
 
     String connectString = couchbasePrefix + hostname;
 
-    synchronized (STARTUP_COORDINATOR) {
-      try {
-        if (environment == null) {
-          Consumer<SecurityConfig.Builder> secConfiguration;
-          if (rootCert != null) {
-            secConfiguration = securityConfig -> securityConfig
-                .enableTls(true)
-                .trustCertificate(Paths.get(rootCert));
-          } else {
-            secConfiguration = securityConfig -> securityConfig
-                .enableTls(useSsl)
-                .enableHostnameVerification(false)
-                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
-          }
-
-          Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
-              .numKvConnections(4)
-              .networkResolution(NetworkResolution.AUTO)
-              .enableMutationTokens(false);
-
-          Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
-              .kvTimeout(Duration.ofSeconds(5))
-              .connectTimeout(Duration.ofSeconds(15))
-              .queryTimeout(Duration.ofSeconds(75));
-
-          Authenticator authenticator;
-          if (clientCert != null) {
-            KeyStore keyStore = KeyStore.getInstance(keyStoreType.name());
-            keyStore.load(Files.newInputStream(Paths.get(clientCert)), password.toCharArray());
-            authenticator = CertificateAuthenticator.fromKeyStore(
-                keyStore,
-                password
-            );
-          } else {
-            authenticator = PasswordAuthenticator.create(username, password);
-          }
-
-          LOGGER.debug("connecting as user {}", username);
-
-          environment = ClusterEnvironment
-              .builder()
-              .timeoutConfig(timeOutConfiguration)
-              .ioConfig(ioConfiguration)
-              .securityConfig(secConfiguration)
-              .build();
-
-          cluster = Cluster.connect(connectString,
-              ClusterOptions.clusterOptions(authenticator).environment(environment));
-
-          LOGGER.debug("{} cluster connected", hostname);
-
-          if (!basic) {
-            cluster.waitUntilReady(Duration.ofSeconds(15));
-            try {
-              if (bucketName != null) {
-                bucket = cluster.bucket(bucketName);
-              }
-            } catch (BucketNotFoundException ignored) { }
-            getClusterInfo();
-            connectCapella();
-          }
+    try {
+      if (cluster == null) {
+        Consumer<SecurityConfig.Builder> secConfiguration;
+        if (rootCert != null) {
+          secConfiguration = securityConfig -> securityConfig
+              .enableTls(true)
+              .trustCertificate(Paths.get(rootCert));
+        } else {
+          secConfiguration = securityConfig -> securityConfig
+              .enableTls(useSsl)
+              .enableHostnameVerification(false)
+              .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
         }
-      } catch(Exception e) {
-        logError(e, connectString);
+
+        Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
+            .numKvConnections(4)
+            .networkResolution(NetworkResolution.AUTO)
+            .enableMutationTokens(false);
+
+        Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
+            .kvTimeout(Duration.ofSeconds(5))
+            .connectTimeout(Duration.ofSeconds(15))
+            .queryTimeout(Duration.ofSeconds(75));
+
+        Authenticator authenticator;
+        if (clientCert != null) {
+          KeyStore keyStore = KeyStore.getInstance(keyStoreType.name());
+          keyStore.load(Files.newInputStream(Paths.get(clientCert)), password.toCharArray());
+          authenticator = CertificateAuthenticator.fromKeyStore(
+              keyStore,
+              password
+          );
+        } else {
+          authenticator = PasswordAuthenticator.create(username, password);
+        }
+
+        LOGGER.debug("connecting as user {}", username);
+
+        environment = ClusterEnvironment
+            .builder()
+            .timeoutConfig(timeOutConfiguration)
+            .ioConfig(ioConfiguration)
+            .securityConfig(secConfiguration)
+            .build();
+
+        cluster = Cluster.connect(connectString,
+            ClusterOptions.clusterOptions(authenticator).environment(environment));
+
+        LOGGER.debug("{} cluster connected", hostname);
+
+        if (!basic) {
+          cluster.waitUntilReady(Duration.ofSeconds(15));
+          try {
+            if (bucketName != null) {
+              bucket = cluster.bucket(bucketName);
+            }
+          } catch (BucketNotFoundException ignored) { }
+          getClusterInfo();
+          connectCapella();
+        }
       }
+    } catch(Exception e) {
+      logError(e, connectString);
     }
   }
 
@@ -396,7 +240,7 @@ public final class CouchbaseConnect {
 
   public void connectCapella() {
     if (capellaTokenSet() && capellaProjectSet() && capellaDatabaseSet() && capellaUserSet()) {
-      LOGGER.info("Connecting to capella cluster");
+      LOGGER.info("Connecting to Couchbase Capella");
       CouchbaseCapella capella = CouchbaseCapella.getInstance(properties);
       CapellaOrganization organization = CapellaOrganization.getInstance(capella);
       CapellaProject project = CapellaProject.getInstance(organization);
@@ -431,10 +275,6 @@ public final class CouchbaseConnect {
 
   public String adminPasswordValue() {
     return password;
-  }
-
-  public boolean externalValue() {
-    return external;
   }
 
   public String getBucketName() {
@@ -504,6 +344,8 @@ public final class CouchbaseConnect {
 
         hostMap.add(entry);
       }
+
+      LOGGER.debug("Connected to Couchbase Server version {} with {} member(s)", clusterVersion, hostMap.size());
 
       if (hostMap.size() == 1) {
         bucketReplicas = 0;

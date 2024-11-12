@@ -64,14 +64,14 @@ public class CapellaDriver1Test {
     LOGGER.info("hostname: {}", hostname);
     LOGGER.info("username: {}", username);
 
-    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
-    CouchbaseConnect db = dbBuilder
+    CouchbaseConnect db = CouchbaseConnect.getInstance();
+    CouchbaseConfig config = new CouchbaseConfig()
         .host(hostname)
         .username(username)
         .password(password)
-        .capella(project, database, email, token)
-        .build();
-    System.out.println(db.clusterVersion);
+        .capella(project, database, email, token);
+    db.connect(config);
+
     boolean result = db.isBucket(bucket);
     LOGGER.debug("isBucket: {}", result);
     db.createBucket(bucket);

@@ -32,11 +32,10 @@ public class CapellaDriver2Test {
 
   @Test
   public void testBasic1() {
-    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
-    CouchbaseConnect db = dbBuilder
-        .fromProperties(properties)
-        .build();
-    System.out.println(db.clusterVersion);
+    CouchbaseConnect db = CouchbaseConnect.getInstance();
+    CouchbaseConfig config = new CouchbaseConfig().fromProperties(properties);
+    db.connect(config);
+
     boolean result = db.isBucket();
     LOGGER.debug("isBucket: {}", result);
     db.createBucket();
