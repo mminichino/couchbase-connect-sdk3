@@ -398,12 +398,12 @@ public final class CouchbaseConnect {
   public void connectBucket(String name) {
     this.bucketName = name;
     bucket = cluster.bucket(bucketName);
-    bucket.waitUntilReady(Duration.ofSeconds(5));
+    bucket.waitUntilReady(Duration.ofSeconds(15));
   }
 
   public void connectBucket() {
     bucket = cluster.bucket(bucketName);
-    bucket.waitUntilReady(Duration.ofSeconds(5));
+    bucket.waitUntilReady(Duration.ofSeconds(15));
   }
 
   public void connectScope(String name) {
