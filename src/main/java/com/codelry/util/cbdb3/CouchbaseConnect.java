@@ -3,6 +3,9 @@ package com.codelry.util.cbdb3;
 import com.codelry.util.capella.*;
 import com.codelry.util.capella.exceptions.CapellaAPIError;
 import com.codelry.util.capella.exceptions.NotFoundException;
+import com.couchbase.client.core.diagnostics.ClusterState;
+import com.couchbase.client.core.diagnostics.EndpointPingReport;
+import com.couchbase.client.core.diagnostics.PingResult;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.NetworkResolution;
@@ -11,6 +14,7 @@ import com.couchbase.client.core.env.Authenticator;
 import com.couchbase.client.core.env.CertificateAuthenticator;
 import com.couchbase.client.core.env.PasswordAuthenticator;
 import com.couchbase.client.core.error.*;
+import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
@@ -30,6 +34,8 @@ import com.couchbase.client.java.manager.query.CreateQueryIndexOptions;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
+import static com.couchbase.client.java.diagnostics.WaitUntilReadyOptions.waitUntilReadyOptions;
+import static com.couchbase.client.java.diagnostics.PingOptions.pingOptions;
 
 import com.couchbase.client.java.manager.search.SearchIndex;
 import com.couchbase.client.java.manager.search.SearchIndexManager;
@@ -67,12 +73,12 @@ import java.util.stream.StreamSupport;
  * Couchbase SDK 3.x Connection Utility.
  */
 public final class CouchbaseConnect {
-  static final Logger LOGGER = LoggerFactory.getLogger(CouchbaseConnect.class);
-  private volatile Cluster cluster;
-  private volatile Bucket bucket;
-  private volatile Scope scope;
-  private volatile Collection collection;
-  private volatile ClusterEnvironment environment;
+  private static final Logger LOGGER = LoggerFactory.getLogger(CouchbaseConnect.class);
+  public static volatile Cluster cluster;
+  public static volatile Bucket bucket;
+  public static volatile Scope scope;
+  public static volatile Collection collection;
+  private static volatile ClusterEnvironment environment;
   private static CouchbaseConnect instance;
   public static final Properties properties = new Properties();
   public static final String CAPELLA_PROJECT_NAME = "capella.project.name";
@@ -82,31 +88,31 @@ public final class CouchbaseConnect {
   public static final String CAPELLA_TOKEN = "capella.token";
   public static final String CAPELLA_USER_EMAIL = "capella.user.email";
   public static final String CAPELLA_USER_ID = "capella.user.id";
-  private String hostname;
-  private String username;
-  private String password;
-  private int bucketReplicas;
-  private BucketType bucketType;
-  private StorageBackend bucketStorage;
-  private String rootCert;
-  private String bucketName;
-  private String scopeName;
-  private String collectionName;
-  private Boolean useSsl;
-  public int adminPort;
-  private int ttlSeconds;
+  private static String hostname;
+  private static String username;
+  private static String password;
+  private static int bucketReplicas;
+  private static BucketType bucketType;
+  private static StorageBackend bucketStorage;
+  private static String rootCert;
+  private static String bucketName;
+  private static String scopeName;
+  private static String collectionName;
+  private static Boolean useSsl;
+  public static int adminPort;
+  private static int ttlSeconds;
   private static int maxParallelism;
-  private final ObjectMapper mapper = new ObjectMapper();
-  private JsonNode clusterInfo = mapper.createObjectNode();
-  public String clusterVersion;
-  public int majorRevision;
-  public int minorRevision;
-  public int patchRevision;
-  public int buildNumber;
-  public String clusterEdition;
-  public CapellaCluster capella;
-  private boolean enableDebug;
-  private final ArrayNode hostMap = mapper.createArrayNode();
+  private static final ObjectMapper mapper = new ObjectMapper();
+  private static JsonNode clusterInfo = mapper.createObjectNode();
+  public static String clusterVersion;
+  public static int majorRevision;
+  public static int minorRevision;
+  public static int patchRevision;
+  public static int buildNumber;
+  public static String clusterEdition;
+  public static CapellaCluster capella;
+  private static boolean enableDebug;
+  private static final ArrayNode hostMap = mapper.createArrayNode();
 
   private CouchbaseConnect() {}
 
@@ -179,7 +185,7 @@ public final class CouchbaseConnect {
         Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
             .kvTimeout(Duration.ofSeconds(5))
             .connectTimeout(Duration.ofSeconds(15))
-            .queryTimeout(Duration.ofSeconds(75));
+            .queryTimeout(Duration.ofSeconds(120));
 
         Authenticator authenticator;
         if (clientCert != null) {
@@ -248,7 +254,7 @@ public final class CouchbaseConnect {
       CouchbaseCapella capella = CouchbaseCapella.getInstance(properties);
       CapellaOrganization organization = CapellaOrganization.getInstance(capella);
       CapellaProject project = CapellaProject.getInstance(organization);
-      this.capella = CapellaCluster.getInstance(project);
+      CouchbaseConnect.capella = CapellaCluster.getInstance(project);
     }
   }
 
@@ -395,19 +401,33 @@ public final class CouchbaseConnect {
     return results.contains(bucketName);
   }
 
+  public void clusterWait() {
+    cluster.waitUntilReady(Duration.ofSeconds(15), waitUntilReadyOptions()
+        .serviceTypes(ServiceType.KV)
+        .desiredState(ClusterState.ONLINE));
+  }
+
+  public void clusterPing() {
+    LOGGER.debug("clusterPing");
+    PingResult result = cluster.ping();
+    for (Map.Entry<ServiceType,List<EndpointPingReport>> entry : result.endpoints().entrySet()) {
+      for (EndpointPingReport report : entry.getValue()) {
+        LOGGER.debug("ping: {}: {}", entry.getKey(), report.toString());
+      }
+    }
+  }
+
   public void connectBucket(String name) {
-    this.bucketName = name;
+    bucketName = name;
     bucket = cluster.bucket(bucketName);
-    bucket.waitUntilReady(Duration.ofSeconds(15));
   }
 
   public void connectBucket() {
     bucket = cluster.bucket(bucketName);
-    bucket.waitUntilReady(Duration.ofSeconds(15));
   }
 
   public void connectScope(String name) {
-    this.scopeName = name;
+    scopeName = name;
     scope = bucket.scope(scopeName);
   }
 
@@ -416,13 +436,13 @@ public final class CouchbaseConnect {
   }
 
   public void connectCollection(String name) {
-    this.collectionName = name;
+    collectionName = name;
     collection = scope.collection(collectionName);
   }
 
   public void connectCollection(String scopeName, String collectionName) {
-    this.scopeName = scopeName;
-    this.collectionName = collectionName;
+    CouchbaseConnect.scopeName = scopeName;
+    CouchbaseConnect.collectionName = collectionName;
     collection = bucket.scope(scopeName).collection(collectionName);
   }
 
@@ -431,9 +451,9 @@ public final class CouchbaseConnect {
   }
 
   public void connectKeyspace(String bucketName, String scopeName, String collectionName) {
-    this.bucketName = bucketName;
-    this.scopeName = scopeName;
-    this.collectionName = collectionName;
+    CouchbaseConnect.bucketName = bucketName;
+    CouchbaseConnect.scopeName = scopeName;
+    CouchbaseConnect.collectionName = collectionName;
     connectBucket(bucketName);
     connectScope(scopeName);
     connectCollection(collectionName);

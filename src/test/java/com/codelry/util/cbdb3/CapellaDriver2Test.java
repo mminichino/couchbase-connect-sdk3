@@ -14,7 +14,7 @@ import java.util.Properties;
 
 public class CapellaDriver2Test {
   private static final Logger LOGGER = LogManager.getLogger(CapellaDriver2Test.class);
-  private static final String propertyFile = "test.capella.properties";
+  private static final String propertyFile = "test.capella.2.properties";
   public static Properties properties;
 
   @BeforeAll
@@ -43,6 +43,7 @@ public class CapellaDriver2Test {
     Assertions.assertTrue(result);
     db.createScope();
     db.createCollection();
+    db.clusterWait();
     db.createPrimaryIndex();
     db.createSecondaryIndex("idx_test", List.of("data"));
     ObjectNode doc = new ObjectMapper().createObjectNode();

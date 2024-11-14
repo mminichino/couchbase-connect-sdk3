@@ -14,7 +14,7 @@ import java.util.Properties;
 
 public class CapellaDriver1Test {
   private static final Logger LOGGER = LogManager.getLogger(CapellaDriver1Test.class);
-  private static final String propertyFile = "test.capella.properties";
+  private static final String propertyFile = "test.capella.1.properties";
   public static Properties properties;
   public static final String CLUSTER_HOST = "couchbase.hostname";
   public static final String CLUSTER_USER = "couchbase.username";
@@ -79,6 +79,7 @@ public class CapellaDriver1Test {
     Assertions.assertTrue(result);
     db.createScope(bucket, scope);
     db.createCollection(bucket, scope, collection);
+    db.clusterWait();
     db.createPrimaryIndex(bucket, scope, collection);
     db.createSecondaryIndex(bucket, scope, collection, "idx_test", List.of("data"));
     ObjectNode doc = new ObjectMapper().createObjectNode();
