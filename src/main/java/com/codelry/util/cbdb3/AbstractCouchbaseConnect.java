@@ -180,9 +180,29 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
 
   protected abstract void dropBucketImpl(String name);
 
+  protected abstract void createClusterImpl(CouchbaseConfig config, Map<String, String> options);
+
+  protected abstract void destroyClusterImpl();
+
   protected abstract String streamHostname();
 
   protected abstract boolean supportsRbacRest();
+
+  @Override
+  public void createCluster(CouchbaseConfig config) {
+    createCluster(config, null);
+  }
+
+  @Override
+  public void createCluster(CouchbaseConfig config, Map<String, String> options) {
+    applyConfig(config);
+    createClusterImpl(config, options);
+  }
+
+  @Override
+  public void destroyCluster() {
+    destroyClusterImpl();
+  }
 
   @Override
   public CouchbaseStream stream(String bucketName) {
@@ -282,9 +302,17 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
 
   @Override
   public void clusterWait() {
-    cluster.waitUntilReady(Duration.ofSeconds(15), waitUntilReadyOptions()
-        .serviceTypes(ServiceType.KV)
+    cluster.waitUntilReady(Duration.ofSeconds(30), waitUntilReadyOptions()
+        .serviceTypes(ServiceType.KV, ServiceType.QUERY, ServiceType.VIEWS)
         .desiredState(ClusterState.ONLINE));
+    waitForClusterOperationsReady();
+  }
+
+  protected void waitForClusterOperationsReady() {
+    if (supportsRbacRest() && connectTarget != null && username != null && password != null) {
+      ClusterCreateSupport.waitForQueryReady(connectTarget, username, password);
+      ClusterCreateSupport.waitForRebalanceComplete(connectTarget, adminPort, username, password);
+    }
   }
 
   @Override
@@ -501,8 +529,10 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
         .ignoreIfExists(true);
 
     logger.debug("Creating Primary Index: Collection: {} replicas: {}", collectionName, replicaCount);
-    queryIndexMgr.createPrimaryIndex(options);
-    queryIndexMgr.watchIndexes(Collections.singletonList("#primary"), Duration.ofSeconds(30));
+    runWithIndexCreationRetry(() -> {
+      queryIndexMgr.createPrimaryIndex(options);
+      queryIndexMgr.watchIndexes(Collections.singletonList("#primary"), Duration.ofSeconds(30));
+    });
   }
 
   @Override
@@ -532,8 +562,57 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
         .ignoreIfExists(true);
 
     logger.debug("Creating GSI: Collection: {} Name: {} Fields: {} replicas: {}", collectionName, indexName, indexKeys, replicaCount);
-    queryIndexMgr.createIndex(indexName, indexKeys, options);
-    queryIndexMgr.watchIndexes(Collections.singletonList(indexName), Duration.ofSeconds(30));
+    runWithIndexCreationRetry(() -> {
+      queryIndexMgr.createIndex(indexName, indexKeys, options);
+      queryIndexMgr.watchIndexes(Collections.singletonList(indexName), Duration.ofSeconds(30));
+    });
+  }
+
+  private void runWithIndexCreationRetry(Runnable action) {
+    int retryCount = 30;
+    Duration wait = Duration.ofSeconds(2);
+    RuntimeException lastError = null;
+    for (int attempt = 1; attempt <= retryCount; attempt++) {
+      try {
+        waitForClusterOperationsReady();
+        action.run();
+        return;
+      } catch (RuntimeException e) {
+        lastError = e;
+        if (attempt == retryCount || !isRetryableIndexError(e)) {
+          throw e;
+        }
+        logger.debug("Index creation retry {}/{}: {}", attempt, retryCount, e.getMessage());
+        sleep(wait);
+      }
+    }
+    if (lastError != null) {
+      throw lastError;
+    }
+  }
+
+  private boolean isRetryableIndexError(RuntimeException error) {
+    String message = error.getMessage();
+    if (message == null) {
+      return false;
+    }
+    String lower = message.toLowerCase();
+    return lower.contains("rebalance in progress")
+        || lower.contains("keyspace not found")
+        || lower.contains("indexing.error")
+        || lower.contains("query service is not available")
+        || lower.contains("channel_closed")
+        || lower.contains("no_more_retries")
+        || lower.contains("endpoint_not_available");
+  }
+
+  private void sleep(Duration duration) {
+    try {
+      Thread.sleep(duration.toMillis());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException(e);
+    }
   }
 
   @Override

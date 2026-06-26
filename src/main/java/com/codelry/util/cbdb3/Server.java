@@ -20,6 +20,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.KeyStore;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -145,6 +148,94 @@ public final class Server extends AbstractCouchbaseConnect {
   @Override
   public void dropBucket(String name) {
     dropBucketImpl(name);
+  }
+
+  @Override
+  protected void createClusterImpl(CouchbaseConfig config, Map<String, String> options) {
+    Map<String, String> merged = ClusterCreateSupport.mergeOptions(config, options);
+    List<ClusterNodeConfig> nodes = ClusterCreateSupport.parseServerNodes(merged);
+    if (nodes.isEmpty()) {
+      throw new IllegalArgumentException("At least one Couchbase Server node must be configured");
+    }
+
+    int adminRestPort = Boolean.FALSE.equals(config.getSslMode()) ? 8091 : 18091;
+    List<String> nodeHosts = new ArrayList<>();
+    try {
+      ClusterNodeConfig firstNode = nodes.get(0);
+      ClusterCreateSupport.HostPort firstHost = ClusterCreateSupport.parseHostPort(firstNode.getIp(), adminRestPort);
+      if (ClusterCreateSupport.isClusterInitialized(
+          firstHost.host(), firstHost.port(), config.getUsername(), config.getPassword())) {
+        logger.debug("Cluster already initialized on {}", firstHost.host());
+        connectTarget = firstHost.host();
+        ClusterCreateSupport.waitForRebalanceComplete(
+            firstHost.host(),
+            firstHost.port(),
+            config.getUsername(),
+            config.getPassword());
+        return;
+      }
+      Map<String, Integer> quotas = ClusterCreateSupport.calculateServerQuotas(firstNode, merged);
+      logger.debug("Creating single-node cluster on {} with quotas {}", firstHost.host(), quotas);
+      ClusterCreateSupport.initializeSingleNodeCluster(
+          firstHost.host(),
+          firstHost.port(),
+          config.getUsername(),
+          config.getPassword(),
+          firstNode.getServices(),
+          quotas);
+      nodeHosts.add(firstHost.host());
+
+      for (int index = 1; index < nodes.size(); index++) {
+        ClusterNodeConfig node = nodes.get(index);
+        ClusterCreateSupport.HostPort nodeHost = ClusterCreateSupport.parseHostPort(node.getIp(), adminRestPort);
+        ClusterCreateSupport.addNodeToCluster(
+            firstHost.host(),
+            firstHost.port(),
+            config.getUsername(),
+            config.getPassword(),
+            nodeHost.host(),
+            node.getServices());
+        nodeHosts.add(nodeHost.host());
+      }
+
+      if (nodes.size() > 1) {
+        ClusterCreateSupport.rebalanceCluster(
+            firstHost.host(),
+            firstHost.port(),
+            config.getUsername(),
+            config.getPassword(),
+            nodeHosts);
+      }
+
+      ClusterCreateSupport.waitForCluster(
+          firstHost.host(),
+          firstHost.port(),
+          config.getUsername(),
+          config.getPassword(),
+          60);
+      ClusterCreateSupport.waitForRebalanceComplete(
+          firstHost.host(),
+          firstHost.port(),
+          config.getUsername(),
+          config.getPassword());
+      ClusterCreateSupport.waitForClusterServices(
+          firstHost.host(),
+          firstHost.port(),
+          config.getUsername(),
+          config.getPassword());
+      ClusterCreateSupport.waitForQueryReady(
+          firstHost.host(),
+          config.getUsername(),
+          config.getPassword());
+      connectTarget = firstHost.host();
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to create Couchbase Server cluster", e);
+    }
+  }
+
+  @Override
+  protected void destroyClusterImpl() {
+    logger.debug("destroyCluster is not supported for Couchbase Server");
   }
 
   @Override

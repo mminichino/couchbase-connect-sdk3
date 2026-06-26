@@ -105,6 +105,7 @@ public class CapellaDriver1Test {
     db.connectCollection(scope, collection);
     db.upsert("doc::1", doc);
     db.dropBucket(bucket);
+    db.disconnect();
   }
 
   @Test

@@ -3,13 +3,17 @@ package com.codelry.util.cbdb3;
 import com.codelry.util.capella.CapellaBucket;
 import com.codelry.util.capella.CapellaCluster;
 import com.codelry.util.capella.CapellaConnect;
-import com.codelry.util.capella.CapellaCredentials;
+import com.codelry.util.capella.CapellaConnectivity;
 import com.codelry.util.capella.CapellaOrganization;
 import com.codelry.util.capella.CapellaProject;
 import com.codelry.util.capella.CouchbaseCapella;
 import com.codelry.util.capella.exceptions.CapellaAPIError;
 import com.codelry.util.capella.exceptions.NotFoundException;
 import com.couchbase.client.java.manager.bucket.BucketSettings;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Couchbase Capella connection using the Capella API to resolve the connect string.
@@ -47,10 +51,8 @@ public final class Capella extends AbstractCouchbaseConnect {
         CouchbaseCapella capellaApi = CouchbaseCapella.getInstance(properties);
         CapellaOrganization organization = CapellaOrganization.getInstance(capellaApi);
         CapellaProject project = CapellaProject.getInstance(organization);
-        capellaCluster = CapellaCluster.getInstance(project);
-
-        CapellaCredentials credentials = capellaCluster.getCredentials();
-        credentials.createCredential(username, password, null);
+        capellaCluster = CapellaCluster.getInstance(project, databaseName);
+        capellaCluster.getCredentials().addCredentials(username, password);
         cluster = CapellaConnect.connect(capellaCluster);
         connectTarget = databaseName;
         streamHost = extractHost(capellaCluster.getConnectString());
@@ -191,6 +193,50 @@ public final class Capella extends AbstractCouchbaseConnect {
   @Override
   public void dropBucket(String name) {
     dropBucketImpl(name);
+  }
+
+  @Override
+  protected void createClusterImpl(CouchbaseConfig config, Map<String, String> options) {
+    Map<String, String> merged = ClusterCreateSupport.mergeOptions(config, options);
+    properties.putAll(merged);
+    resolveDatabaseName(config);
+    validateCapellaConfig();
+
+    try {
+      CouchbaseCapella capellaApi = CouchbaseCapella.getInstance(properties);
+      CapellaOrganization organization = CapellaOrganization.getInstance(capellaApi);
+      CapellaProject project = CapellaProject.getInstance(organization);
+      List<CapellaNodeConfig> nodes = ClusterCreateSupport.parseCapellaNodes(merged);
+      CapellaCluster.ClusterConfig clusterConfig = ClusterCreateSupport.buildCapellaClusterConfig(merged, nodes);
+      capellaCluster = project.createCluster(databaseName, clusterConfig);
+
+      String allowedCidr = merged.getOrDefault(CouchbaseConfig.CAPELLA_CLUSTER_ALLOW, "0.0.0.0/0");
+      capellaCluster.getAllowedCIDR().createAllowedCIDR(allowedCidr);
+      capellaCluster.getCredentials().createCredential(username, password, null);
+
+      if (!new CapellaConnectivity().checkConnectivity(capellaCluster.getConnectString(), Duration.ofMinutes(5))) {
+        throw new RuntimeException("Capella cluster connectivity check failed");
+      }
+      streamHost = extractHost(capellaCluster.getConnectString());
+      connectTarget = databaseName;
+      logger.info("Capella cluster {} created", databaseName);
+    } catch (CapellaAPIError e) {
+      throw new RuntimeException("Failed to create Capella cluster", e);
+    }
+  }
+
+  @Override
+  protected void destroyClusterImpl() {
+    if (capellaCluster == null) {
+      return;
+    }
+    try {
+      capellaCluster.delete();
+      capellaCluster = null;
+      logger.info("Capella cluster {} destroyed", databaseName);
+    } catch (CapellaAPIError e) {
+      throw new RuntimeException("Failed to destroy Capella cluster", e);
+    }
   }
 
   @Override

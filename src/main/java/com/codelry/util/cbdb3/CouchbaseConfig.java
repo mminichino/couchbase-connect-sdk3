@@ -39,6 +39,20 @@ public class CouchbaseConfig {
   public static final String CAPELLA_USER_EMAIL = "capella.user.email";
   public static final String CAPELLA_USER_ID = "capella.user.id";
 
+  public static final String COUCHBASE_SERVER_PREFIX = "couchbase.server";
+  public static final String COUCHBASE_SERVER_IP = "couchbase.server.%d.ip";
+  public static final String COUCHBASE_SERVER_RAM = "couchbase.server.%d.ram";
+  public static final String COUCHBASE_SERVER_SERVICES = "couchbase.server.%d.services";
+  public static final String COUCHBASE_SERVER_QUOTA = "couchbase.server.%s.quota";
+  public static final String CAPELLA_CLUSTER_ALLOW = "capella.cluster.allow";
+  public static final String CAPELLA_CLUSTER_NODE_CPU = "capella.cluster.node.%d.cpu";
+  public static final String CAPELLA_CLUSTER_NODE_RAM = "capella.cluster.node.%d.ram";
+  public static final String CAPELLA_CLUSTER_NODE_SERVICES = "capella.cluster.node.%d.services";
+
+  public static String serverQuotaKey(String service) {
+    return String.format(COUCHBASE_SERVER_QUOTA, service);
+  }
+
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";

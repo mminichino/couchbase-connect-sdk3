@@ -11,6 +11,7 @@ import com.couchbase.client.java.manager.bucket.StorageBackend;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.couchbase.client.java.manager.user.Role;
@@ -55,6 +56,12 @@ public interface CouchbaseConnect {
   }
 
   void connect(CouchbaseConfig config);
+
+  void createCluster(CouchbaseConfig config);
+
+  void createCluster(CouchbaseConfig config, Map<String, String> options);
+
+  void destroyCluster();
 
   void disconnect();
 
