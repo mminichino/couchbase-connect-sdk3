@@ -1,0 +1,131 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'maven-publish'
+    id 'org.jreleaser' version '1.24.0'
+}
+
+group = 'com.codelry.util'
+version = '1.2.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    implementation 'org.apache.logging.log4j:log4j-core:2.26.0'
+    implementation 'org.apache.logging.log4j:log4j-api:2.26.0'
+    implementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.26.0'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.22.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.0'
+    implementation 'org.apache.commons:commons-configuration2:2.15.1'
+    implementation 'com.couchbase.client:java-client:3.12.0'
+    implementation 'com.couchbase.client:dcp-client:0.57.0'
+    implementation 'com.codelry.util:restfull-core:1.0.3'
+    implementation 'com.codelry.util:capella-api:1.2.0'
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+tasks.named('compileJava') {
+    options.release = 17
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    onlyIf {
+        gradle.startParameter.taskNames.any { it.toLowerCase().contains('test') }
+    }
+    testLogging {
+        events "PASSED", "SKIPPED", "FAILED"
+        exceptionFormat = TestExceptionFormat.FULL
+        showStandardStreams true
+    }
+}
+
+tasks.register('pushToGithub') {
+    def stdout = new ByteArrayOutputStream()
+    doLast {
+        exec {
+            commandLine 'git', 'commit', '-am', "Version $version"
+            standardOutput = stdout
+        }
+        exec {
+            commandLine 'git', 'push', '-u', 'origin'
+            standardOutput = stdout
+        }
+        println stdout
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = project.group.toString()
+            artifactId = project.name
+
+            from components.java
+
+            pom {
+                name = project.name
+                description = 'Couchbase Connect'
+                url = 'https://github.com/mminichino/couchbase-connect'
+                inceptionYear = '2024'
+                licenses {
+                    license {
+                        name = 'Apache-2.0'
+                        url = 'https://spdx.org/licenses/Apache-2.0.html'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'mminichino'
+                        name = 'Michael Minichino'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:https://github.com/mminichino/couchbase-connect.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/mminichino/couchbase-connect.git'
+                    url = 'https://github.com/mminichino/couchbase-connect'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            url = layout.buildDirectory.dir('staging-deploy').get().asFile.toURI()
+        }
+    }
+}
+
+jreleaser {
+    signing {
+        pgp {
+            active = 'ALWAYS'
+            armored = true
+        }
+    }
+    deploy {
+        maven {
+            mavenCentral {
+                sonatype {
+                    active = 'ALWAYS'
+                    url = 'https://central.sonatype.com/api/v1/publisher'
+                    stagingRepository('build/staging-deploy')
+                }
+            }
+        }
+    }
+}

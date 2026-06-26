@@ -32,7 +32,7 @@ public class CapellaDriver2Test {
 
   @Test
   public void testBasic1() {
-    CouchbaseConnect db = CouchbaseConnect.getInstance();
+    CouchbaseConnect db = Capella.getInstance();
     CouchbaseConfig config = new CouchbaseConfig().fromProperties(properties);
     db.connect(config);
 

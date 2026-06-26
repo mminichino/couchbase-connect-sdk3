@@ -25,15 +25,26 @@ public class CouchbaseConfig {
   public static final String COUCHBASE_QUICK_CONNECT = "couchbase.quickConnect";
   public static final String COUCHBASE_SOFT_FAILURE = "couchbase.softFailure";
   public static final String COUCHBASE_DEBUG_MODE = "couchbase.debug";
+
+  public static final String CAPELLA_ORGANIZATION_NAME = "capella.organization.name";
+  public static final String CAPELLA_ORGANIZATION_ID = "capella.organization.id";
   public static final String CAPELLA_PROJECT_NAME = "capella.project.name";
+  public static final String CAPELLA_PROJECT_ID = "capella.project.id";
   public static final String CAPELLA_DATABASE_NAME = "capella.database.name";
+  public static final String CAPELLA_DATABASE_ID = "capella.database.id";
+  public static final String CAPELLA_COLUMNAR_NAME = "capella.columnar.name";
+  public static final String CAPELLA_COLUMNAR_ID = "capella.columnar.id";
   public static final String CAPELLA_TOKEN = "capella.token";
+  public static final String CAPELLA_API_HOST = "capella.api.host";
   public static final String CAPELLA_USER_EMAIL = "capella.user.email";
+  public static final String CAPELLA_USER_ID = "capella.user.id";
+
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";
   public static final Boolean DEFAULT_SSL_MODE = true;
   public static final String DEFAULT_SSL_SETTING = "true";
+
   private String hostname = DEFAULT_HOSTNAME;
   private String username = DEFAULT_USER;
   private String password = DEFAULT_PASSWORD;
@@ -151,11 +162,63 @@ public class CouchbaseConfig {
     return this;
   }
 
-  public CouchbaseConfig capella(final String project, final String database, final String email, final String token) {
-    properties.setProperty(CAPELLA_PROJECT_NAME, project);
-    properties.setProperty(CAPELLA_DATABASE_NAME, database);
-    properties.setProperty(CAPELLA_USER_EMAIL, email);
-    properties.setProperty(CAPELLA_TOKEN, token);
+  public CouchbaseConfig organization(final String name) {
+    setCapellaProperty(CAPELLA_ORGANIZATION_NAME, name);
+    return this;
+  }
+
+  public CouchbaseConfig organizationId(final String id) {
+    setCapellaProperty(CAPELLA_ORGANIZATION_ID, id);
+    return this;
+  }
+
+  public CouchbaseConfig project(final String name) {
+    setCapellaProperty(CAPELLA_PROJECT_NAME, name);
+    return this;
+  }
+
+  public CouchbaseConfig projectId(final String id) {
+    setCapellaProperty(CAPELLA_PROJECT_ID, id);
+    return this;
+  }
+
+  public CouchbaseConfig database(final String name) {
+    setCapellaProperty(CAPELLA_DATABASE_NAME, name);
+    return this;
+  }
+
+  public CouchbaseConfig databaseId(final String id) {
+    setCapellaProperty(CAPELLA_DATABASE_ID, id);
+    return this;
+  }
+
+  public CouchbaseConfig columnar(final String name) {
+    setCapellaProperty(CAPELLA_COLUMNAR_NAME, name);
+    return this;
+  }
+
+  public CouchbaseConfig columnarId(final String id) {
+    setCapellaProperty(CAPELLA_COLUMNAR_ID, id);
+    return this;
+  }
+
+  public CouchbaseConfig userEmail(final String email) {
+    setCapellaProperty(CAPELLA_USER_EMAIL, email);
+    return this;
+  }
+
+  public CouchbaseConfig userId(final String id) {
+    setCapellaProperty(CAPELLA_USER_ID, id);
+    return this;
+  }
+
+  public CouchbaseConfig token(final String token) {
+    setCapellaProperty(CAPELLA_TOKEN, token);
+    return this;
+  }
+
+  public CouchbaseConfig apiHost(final String host) {
+    setCapellaProperty(CAPELLA_API_HOST, host);
     return this;
   }
 
@@ -178,8 +241,37 @@ public class CouchbaseConfig {
     this.basic = properties.getProperty(COUCHBASE_QUICK_CONNECT, "false").equals("true");
     this.softFailure = properties.getProperty(COUCHBASE_SOFT_FAILURE, "false").equals("true");
     this.enableDebug = properties.getProperty(COUCHBASE_DEBUG_MODE, "false").equals("true");
+    applyCapellaFromProperties(properties);
     this.properties.putAll(properties);
     return this;
+  }
+
+  private void setCapellaProperty(String key, String value) {
+    if (value != null) {
+      properties.setProperty(key, value);
+    }
+  }
+
+  private void applyCapellaFromProperties(Properties source) {
+    copyIfPresent(source, CAPELLA_ORGANIZATION_NAME);
+    copyIfPresent(source, CAPELLA_ORGANIZATION_ID);
+    copyIfPresent(source, CAPELLA_PROJECT_NAME);
+    copyIfPresent(source, CAPELLA_PROJECT_ID);
+    copyIfPresent(source, CAPELLA_DATABASE_NAME);
+    copyIfPresent(source, CAPELLA_DATABASE_ID);
+    copyIfPresent(source, CAPELLA_COLUMNAR_NAME);
+    copyIfPresent(source, CAPELLA_COLUMNAR_ID);
+    copyIfPresent(source, CAPELLA_TOKEN);
+    copyIfPresent(source, CAPELLA_API_HOST);
+    copyIfPresent(source, CAPELLA_USER_EMAIL);
+    copyIfPresent(source, CAPELLA_USER_ID);
+  }
+
+  private void copyIfPresent(Properties source, String key) {
+    String value = source.getProperty(key);
+    if (value != null) {
+      properties.setProperty(key, value);
+    }
   }
 
   public String getHostname() {
