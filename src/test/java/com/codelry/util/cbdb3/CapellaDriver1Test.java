@@ -73,7 +73,7 @@ public class CapellaDriver1Test {
     String collection = properties.getProperty(COUCHBASE_COLLECTION, DEFAULT_COLLECTION);
     String project = properties.getProperty(CouchbaseConfig.CAPELLA_PROJECT_NAME, DEFAULT_PROJECT_NAME);
     String database = properties.getProperty(CouchbaseConfig.CAPELLA_DATABASE_NAME, DEFAULT_DATABASE_NAME);
-    String email = properties.getProperty(CouchbaseConfig.CAPELLA_USER_EMAIL);
+    String userId = properties.getProperty(CouchbaseConfig.CAPELLA_USER_ID);
     String token = properties.getProperty(CouchbaseConfig.CAPELLA_TOKEN);
 
     LOGGER.info("hostname: {}", hostname);
@@ -85,7 +85,7 @@ public class CapellaDriver1Test {
         .password(password)
         .project(project)
         .database(database)
-        .userEmail(email)
+        .userId(userId)
         .token(token);
     db.connect(config);
 
