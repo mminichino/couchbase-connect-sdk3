@@ -86,18 +86,20 @@ final class CouchbaseServerContainer {
   }
 
   private static boolean clusterAlreadyRunning() {
+    ClusterCreateSupport.ClusterRestEndpoint endpoint = ClusterCreateSupport.ClusterRestEndpoint.forServer(
+        CouchbaseConfig.DEFAULT_HOSTNAME,
+        false);
     if (!isPortListening(8091)) {
       return false;
     }
     if (!ClusterCreateSupport.isClusterInitialized(
-        CouchbaseConfig.DEFAULT_HOSTNAME,
-        8091,
+        endpoint,
         CouchbaseConfig.DEFAULT_USER,
         CouchbaseConfig.DEFAULT_PASSWORD)) {
       return false;
     }
     return ClusterCreateSupport.isQueryReady(
-        CouchbaseConfig.DEFAULT_HOSTNAME,
+        endpoint,
         CouchbaseConfig.DEFAULT_USER,
         CouchbaseConfig.DEFAULT_PASSWORD);
   }

@@ -52,6 +52,7 @@ public class CapellaClusterCreateTest {
 
     db.dropBucket(bucket);
     db.destroyCluster();
+    db.disconnect();
     db = null;
   }
 }

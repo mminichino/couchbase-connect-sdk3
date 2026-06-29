@@ -2,14 +2,9 @@ package com.codelry.util.cbdb3;
 
 import com.codelry.util.capella.CapellaCluster;
 import com.codelry.util.rest.REST;
+import com.codelry.util.rest.exceptions.HttpResponseException;
 import com.fasterxml.jackson.databind.JsonNode;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,7 +14,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 final class ClusterCreateSupport {
   private static final List<String> DEFAULT_SERVER_SERVICES = List.of("data", "index", "query", "fts");
@@ -155,13 +149,12 @@ final class ClusterCreateSupport {
   }
 
   static void initializeSingleNodeCluster(
-      String host,
-      int port,
+      ClusterRestEndpoint endpoint,
       String username,
       String password,
       List<String> services,
       Map<String, Integer> quotas) {
-    String clusterHostname = clusterInitHostname(host);
+    String clusterHostname = clusterInitHostname(endpoint.host());
     Map<String, String> fields = new LinkedHashMap<>();
     fields.put("hostname", clusterHostname);
     fields.put("username", username);
@@ -171,7 +164,7 @@ final class ClusterCreateSupport {
     fields.put("allowedHosts", allowedHosts(clusterHostname));
     fields.put("indexerStorageMode", "plasma");
     applyQuotaFields(fields, quotas);
-    postForm(host, port, false, null, null, "clusterInit", fields);
+    postForm(endpoint, null, null, "clusterInit", fields);
   }
 
   static String allowedHosts(String clusterHostname) {
@@ -193,8 +186,7 @@ final class ClusterCreateSupport {
   }
 
   static void addNodeToCluster(
-      String clusterHost,
-      int clusterPort,
+      ClusterRestEndpoint endpoint,
       String username,
       String password,
       String nodeHost,
@@ -204,12 +196,11 @@ final class ClusterCreateSupport {
     fields.put("user", username);
     fields.put("password", password);
     fields.put("services", toRestServices(services));
-    postForm(clusterHost, clusterPort, false, username, password, "controller/addNode", fields);
+    postForm(endpoint, username, password, "controller/addNode", fields);
   }
 
   static void rebalanceCluster(
-      String clusterHost,
-      int clusterPort,
+      ClusterRestEndpoint endpoint,
       String username,
       String password,
       List<String> nodeHosts) {
@@ -219,11 +210,11 @@ final class ClusterCreateSupport {
     }
     Map<String, String> fields = new LinkedHashMap<>();
     fields.put("knownNodes", String.join(",", knownNodes));
-    postForm(clusterHost, clusterPort, false, username, password, "controller/rebalance", fields);
+    postForm(endpoint, username, password, "controller/rebalance", fields);
   }
 
-  static void waitForCluster(String host, int port, String username, String password, int retries) {
-    REST rest = new REST(host, username, password, false, port).enableDebug(false);
+  static void waitForCluster(ClusterRestEndpoint endpoint, String username, String password, int retries) {
+    REST rest = adminClient(endpoint, username, password);
     for (int attempt = 0; attempt < retries; attempt++) {
       try {
         JsonNode response = rest.get("pools/default").validate().json();
@@ -234,11 +225,12 @@ final class ClusterCreateSupport {
       }
       sleep(Duration.ofSeconds(2));
     }
-    throw new RuntimeException("Timed out waiting for Couchbase cluster at " + host + ":" + port);
+    throw new RuntimeException("Timed out waiting for Couchbase cluster at "
+        + endpoint.host() + ":" + endpoint.adminPort());
   }
 
-  static void waitForRebalanceComplete(String host, int port, String username, String password) {
-    REST rest = new REST(host, username, password, false, port).enableDebug(false);
+  static void waitForRebalanceComplete(ClusterRestEndpoint endpoint, String username, String password) {
+    REST rest = adminClient(endpoint, username, password);
     for (int attempt = 0; attempt < 120; attempt++) {
       try {
         if (!isRebalanceInProgress(rest)) {
@@ -248,7 +240,8 @@ final class ClusterCreateSupport {
       }
       sleep(Duration.ofSeconds(2));
     }
-    throw new RuntimeException("Timed out waiting for rebalance to complete at " + host + ":" + port);
+    throw new RuntimeException("Timed out waiting for rebalance to complete at "
+        + endpoint.host() + ":" + endpoint.adminPort());
   }
 
   private static boolean isRebalanceInProgress(REST rest) {
@@ -287,44 +280,33 @@ final class ClusterCreateSupport {
     }
   }
 
-  static void waitForQueryReady(String host, String username, String password) {
-    if (isQueryReady(host, username, password)) {
+  static void waitForQueryReady(ClusterRestEndpoint endpoint, String username, String password) {
+    if (isQueryReady(endpoint, username, password)) {
       return;
     }
-    String body = "statement=" + encode("SELECT 1");
     for (int attempt = 0; attempt < 60; attempt++) {
       sleep(Duration.ofSeconds(2));
-      if (isQueryReady(host, username, password)) {
+      if (isQueryReady(endpoint, username, password)) {
         return;
       }
     }
-    throw new RuntimeException("Timed out waiting for query service at " + host + ":8093");
+    throw new RuntimeException("Timed out waiting for query service at "
+        + endpoint.host() + ":" + endpoint.queryPort());
   }
 
-  static boolean isQueryReady(String host, String username, String password) {
-    String body = "statement=" + encode("SELECT 1");
+  static boolean isQueryReady(ClusterRestEndpoint endpoint, String username, String password) {
     try {
-      HttpURLConnection connection = (HttpURLConnection) URI.create(
-          "http://" + host + ":8093/query/service").toURL().openConnection();
-      connection.setConnectTimeout(1000);
-      connection.setReadTimeout(2000);
-      connection.setRequestMethod("POST");
-      connection.setDoOutput(true);
-      connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-      String credentials = username + ":" + password;
-      String encoded = java.util.Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
-      connection.setRequestProperty("Authorization", "Basic " + encoded);
-      try (OutputStream outputStream = connection.getOutputStream()) {
-        outputStream.write(body.getBytes(StandardCharsets.UTF_8));
-      }
-      return connection.getResponseCode() >= 200 && connection.getResponseCode() < 300;
+      formClient(endpoint, username, password, endpoint.queryPort())
+          .post("query/service", Map.of("statement", "SELECT 1"))
+          .validate();
+      return true;
     } catch (Exception ignored) {
       return false;
     }
   }
 
-  static void waitForClusterServices(String host, int port, String username, String password) {
-    REST rest = new REST(host, username, password, false, port).enableDebug(false);
+  static void waitForClusterServices(ClusterRestEndpoint endpoint, String username, String password) {
+    REST rest = adminClient(endpoint, username, password);
     for (int attempt = 0; attempt < 120; attempt++) {
       try {
         JsonNode response = rest.get("pools/default").validate().json();
@@ -335,11 +317,12 @@ final class ClusterCreateSupport {
       }
       sleep(Duration.ofSeconds(2));
     }
-    throw new RuntimeException("Timed out waiting for Couchbase cluster services at " + host + ":" + port);
+    throw new RuntimeException("Timed out waiting for Couchbase cluster services at "
+        + endpoint.host() + ":" + endpoint.adminPort());
   }
 
-  static boolean isClusterInitialized(String host, int port, String username, String password) {
-    REST rest = new REST(host, username, password, false, port).enableDebug(false);
+  static boolean isClusterInitialized(ClusterRestEndpoint endpoint, String username, String password) {
+    REST rest = adminClient(endpoint, username, password);
     try {
       JsonNode response = rest.get("pools/default").validate().json();
       return servicesRunning(response, "kv", "n1ql", "index");
@@ -381,57 +364,20 @@ final class ClusterCreateSupport {
   }
 
   static void postForm(
-      String host,
-      int port,
-      boolean useSsl,
+      ClusterRestEndpoint endpoint,
       String username,
       String password,
-      String endpoint,
+      String path,
       Map<String, String> fields) {
-    String normalizedEndpoint = endpoint.replaceAll("^/+", "");
-    String scheme = useSsl ? "https" : "http";
-    String body = fields.entrySet().stream()
-        .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
-        .collect(Collectors.joining("&"));
+    String normalizedEndpoint = path.replaceAll("^/+", "");
+    REST rest = formClient(endpoint, username, password, endpoint.adminPort());
     try {
-      HttpURLConnection connection = (HttpURLConnection) URI.create(
-          scheme + "://" + host + ":" + port + "/" + normalizedEndpoint).toURL().openConnection();
-      connection.setRequestMethod("POST");
-      connection.setDoOutput(true);
-      connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-      if (username != null && password != null) {
-        String credentials = username + ":" + password;
-        String encoded = java.util.Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
-        connection.setRequestProperty("Authorization", "Basic " + encoded);
-      }
-      try (OutputStream outputStream = connection.getOutputStream()) {
-        outputStream.write(body.getBytes(StandardCharsets.UTF_8));
-      }
-      int code = connection.getResponseCode();
-      if (code < 200 || code >= 300) {
-        String responseBody = readResponseBody(connection);
-        throw new RuntimeException("HTTP " + code + " from " + endpoint + ": " + responseBody);
-      }
-    } catch (IOException e) {
-      throw new RuntimeException("Failed to POST form data to " + endpoint, e);
+      rest.post(normalizedEndpoint, fields).validate();
+    } catch (HttpResponseException e) {
+      throw new RuntimeException("HTTP " + rest.code() + " from " + path + ": " + e.getMessage(), e);
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to POST form data to " + path, e);
     }
-  }
-
-  private static String readResponseBody(HttpURLConnection connection) {
-    try {
-      if (connection.getErrorStream() != null) {
-        return new String(connection.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-      }
-      if (connection.getInputStream() != null) {
-        return new String(connection.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-      }
-    } catch (IOException ignored) {
-    }
-    return "";
-  }
-
-  private static String encode(String value) {
-    return URLEncoder.encode(value, StandardCharsets.UTF_8);
   }
 
   private static void applyQuotaFields(Map<String, String> fields, Map<String, Integer> quotas) {
@@ -533,4 +479,26 @@ final class ClusterCreateSupport {
   }
 
   record HostPort(String host, int port) {}
+
+  record ClusterRestEndpoint(String host, int adminPort, int queryPort, boolean useSsl) {
+    static ClusterRestEndpoint forServer(String host, boolean useSsl) {
+      return new ClusterRestEndpoint(host, useSsl ? 18091 : 8091, useSsl ? 18093 : 8093, useSsl);
+    }
+
+    static ClusterRestEndpoint forCapella(String host) {
+      return new ClusterRestEndpoint(host, 18091, 18093, true);
+    }
+  }
+
+  private static REST adminClient(ClusterRestEndpoint endpoint, String username, String password) {
+    return new REST(endpoint.host(), username, password, endpoint.useSsl(), endpoint.adminPort()).enableDebug(false);
+  }
+
+  private static REST formClient(
+      ClusterRestEndpoint endpoint,
+      String username,
+      String password,
+      int port) {
+    return new REST(endpoint.host(), username, password, endpoint.useSsl(), port).enableDebug(false);
+  }
 }

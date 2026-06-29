@@ -29,6 +29,8 @@ abstract class AbstractServerPerClassTestcontainerTest extends AbstractServerTes
 
   private static void initializeCluster() {
     String hostname = properties.getProperty(CouchbaseConfig.COUCHBASE_HOST, CouchbaseConfig.DEFAULT_HOSTNAME);
+    ClusterCreateSupport.ClusterRestEndpoint endpoint =
+        ClusterCreateSupport.ClusterRestEndpoint.forServer(hostname, false);
     CouchbaseConnect db = Server.getInstance();
     CouchbaseConfig config = serverConfig();
     Map<String, String> options = Map.of(
@@ -37,20 +39,9 @@ abstract class AbstractServerPerClassTestcontainerTest extends AbstractServerTes
         String.format(CouchbaseConfig.COUCHBASE_SERVER_SERVICES, 0), "data,index,query,fts"
     );
     db.createCluster(config, options);
-    ClusterCreateSupport.waitForClusterServices(
-        hostname,
-        8091,
-        config.getUsername(),
-        config.getPassword());
-    ClusterCreateSupport.waitForQueryReady(
-        hostname,
-        config.getUsername(),
-        config.getPassword());
-    ClusterCreateSupport.waitForRebalanceComplete(
-        hostname,
-        8091,
-        config.getUsername(),
-        config.getPassword());
+    ClusterCreateSupport.waitForClusterServices(endpoint, config.getUsername(), config.getPassword());
+    ClusterCreateSupport.waitForQueryReady(endpoint, config.getUsername(), config.getPassword());
+    ClusterCreateSupport.waitForRebalanceComplete(endpoint, config.getUsername(), config.getPassword());
     Server.getInstance().disconnect();
   }
 }

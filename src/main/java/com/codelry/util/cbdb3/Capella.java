@@ -9,9 +9,11 @@ import com.codelry.util.capella.CapellaProject;
 import com.codelry.util.capella.CouchbaseCapella;
 import com.codelry.util.capella.exceptions.CapellaAPIError;
 import com.codelry.util.capella.exceptions.NotFoundException;
+import com.codelry.util.capella.logic.BucketData;
 import com.couchbase.client.java.manager.bucket.BucketSettings;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +47,10 @@ public final class Capella extends AbstractCouchbaseConnect {
     validateCapellaConfig();
 
     try {
+      if (cluster != null && capellaCluster == null) {
+        CapellaConnect.disconnect(cluster);
+        cluster = null;
+      }
       if (cluster == null) {
         logger.info("Connecting to Couchbase Capella database {}", databaseName);
 
@@ -167,6 +173,22 @@ public final class Capella extends AbstractCouchbaseConnect {
   }
 
   @Override
+  public List<String> listBuckets() {
+    if (capellaCluster == null) {
+      throw new RuntimeException("Capella cluster is not connected");
+    }
+    try {
+      List<String> names = new ArrayList<>();
+      for (BucketData bucketData : CapellaBucket.getInstance(capellaCluster).list()) {
+        names.add(bucketData.name());
+      }
+      return names;
+    } catch (CapellaAPIError e) {
+      throw new RuntimeException("Failed to list Capella buckets", e);
+    }
+  }
+
+  @Override
   protected void createBucketImpl(BucketSettings bucketSettings) {
     try {
       CapellaBucket bucket = CapellaBucket.getInstance(capellaCluster);
@@ -219,6 +241,11 @@ public final class Capella extends AbstractCouchbaseConnect {
       }
       streamHost = extractHost(capellaCluster.getConnectString());
       connectTarget = databaseName;
+      ClusterCreateSupport.ClusterRestEndpoint endpoint =
+          ClusterCreateSupport.ClusterRestEndpoint.forCapella(streamHost);
+      ClusterCreateSupport.waitForClusterServices(endpoint, username, password);
+      ClusterCreateSupport.waitForQueryReady(endpoint, username, password);
+      ClusterCreateSupport.waitForRebalanceComplete(endpoint, username, password);
       logger.info("Capella cluster {} created", databaseName);
     } catch (CapellaAPIError e) {
       throw new RuntimeException("Failed to create Capella cluster", e);
@@ -232,16 +259,28 @@ public final class Capella extends AbstractCouchbaseConnect {
     }
     try {
       capellaCluster.delete();
-      capellaCluster = null;
       logger.info("Capella cluster {} destroyed", databaseName);
     } catch (CapellaAPIError e) {
       throw new RuntimeException("Failed to destroy Capella cluster", e);
+    } finally {
+      capellaCluster = null;
+      bucket = null;
+      if (cluster != null) {
+        CapellaConnect.disconnect(cluster);
+        cluster = null;
+      }
+      streamHost = null;
     }
   }
 
   @Override
   protected String streamHostname() {
     return streamHost;
+  }
+
+  @Override
+  protected ClusterCreateSupport.ClusterRestEndpoint clusterRestEndpoint() {
+    return ClusterCreateSupport.ClusterRestEndpoint.forCapella(streamHost);
   }
 
   @Override

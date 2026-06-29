@@ -309,10 +309,16 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   }
 
   protected void waitForClusterOperationsReady() {
-    if (supportsRbacRest() && connectTarget != null && username != null && password != null) {
-      ClusterCreateSupport.waitForQueryReady(connectTarget, username, password);
-      ClusterCreateSupport.waitForRebalanceComplete(connectTarget, adminPort, username, password);
+    ClusterCreateSupport.ClusterRestEndpoint endpoint = clusterRestEndpoint();
+    if (endpoint.host() == null || endpoint.host().isBlank() || username == null || password == null) {
+      return;
     }
+    ClusterCreateSupport.waitForQueryReady(endpoint, username, password);
+    ClusterCreateSupport.waitForRebalanceComplete(endpoint, username, password);
+  }
+
+  protected ClusterCreateSupport.ClusterRestEndpoint clusterRestEndpoint() {
+    return ClusterCreateSupport.ClusterRestEndpoint.forServer(connectTarget, Boolean.TRUE.equals(useSsl));
   }
 
   @Override
