@@ -1,0 +1,1028 @@
+package com.codelry.util.cbdb3;
+
+import com.couchbase.client.core.diagnostics.ClusterState;
+import com.couchbase.client.core.diagnostics.EndpointPingReport;
+import com.couchbase.client.core.diagnostics.PingResult;
+import com.couchbase.client.core.error.*;
+import com.couchbase.client.core.service.ServiceType;
+import com.couchbase.client.java.*;
+import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.codec.RawJsonTranscoder;
+import com.couchbase.client.java.codec.TypeRef;
+import com.couchbase.client.java.http.HttpPath;
+import com.couchbase.client.java.http.HttpResponse;
+import com.couchbase.client.java.http.HttpTarget;
+import com.couchbase.client.java.manager.bucket.*;
+import com.couchbase.client.java.manager.collection.CollectionManager;
+import com.couchbase.client.java.manager.collection.CollectionSpec;
+import com.couchbase.client.java.manager.collection.ScopeSpec;
+import com.couchbase.client.java.manager.query.CollectionQueryIndexManager;
+import com.couchbase.client.java.manager.query.CreatePrimaryQueryIndexOptions;
+import com.couchbase.client.java.manager.query.CreateQueryIndexOptions;
+import com.couchbase.client.java.manager.search.SearchIndex;
+import com.couchbase.client.java.manager.search.SearchIndexManager;
+import com.couchbase.client.java.manager.user.Group;
+import com.couchbase.client.java.manager.user.Role;
+import com.couchbase.client.java.manager.user.User;
+import com.couchbase.client.java.manager.user.UserManager;
+import com.couchbase.client.java.query.QueryScanConsistency;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.codelry.util.rest.REST;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.util.*;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
+
+import static com.couchbase.client.java.diagnostics.WaitUntilReadyOptions.waitUntilReadyOptions;
+import static com.couchbase.client.java.kv.GetOptions.getOptions;
+import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
+import static com.couchbase.client.java.query.QueryOptions.queryOptions;
+
+abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
+  protected final Logger logger = LoggerFactory.getLogger(getClass());
+
+  protected volatile Cluster cluster;
+  protected volatile Bucket bucket;
+  protected volatile Scope scope;
+  protected volatile Collection collection;
+  protected final Properties properties = new Properties();
+  protected String connectTarget;
+  protected String username;
+  protected String password;
+  protected int bucketReplicas;
+  protected BucketType bucketType;
+  protected StorageBackend bucketStorage;
+  protected String bucketName;
+  protected String scopeName;
+  protected String collectionName;
+  protected Boolean useSsl;
+  protected int adminPort;
+  protected int ttlSeconds;
+  protected int maxParallelism;
+  protected final ObjectMapper mapper = new ObjectMapper();
+  protected JsonNode clusterInfo = mapper.createObjectNode();
+  protected String clusterVersion;
+  protected int majorRevision;
+  protected int minorRevision;
+  protected int patchRevision;
+  protected int buildNumber;
+  protected String clusterEdition;
+  protected boolean enableDebug;
+  protected final ArrayNode hostMap = mapper.createArrayNode();
+
+  protected void applyConfig(CouchbaseConfig config) {
+    connectTarget = config.getHostname();
+    username = config.getUsername();
+    password = config.getPassword();
+    enableDebug = config.getEnableDebug();
+    useSsl = config.getSslMode();
+    ttlSeconds = config.getTtlSeconds();
+    bucketName = config.getBucketName();
+    scopeName = config.getScopeName();
+    collectionName = config.getCollectionName();
+    bucketReplicas = config.getBucketReplicas();
+    bucketType = config.getBucketType();
+    bucketStorage = config.getBucketStorage();
+    maxParallelism = config.getMaxParallelism();
+    properties.clear();
+    properties.putAll(config.getProperties());
+  }
+
+  protected void enableDebugLogging() {
+    if (enableDebug) {
+      LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+      Configuration configuration = ctx.getConfiguration();
+      LoggerConfig loggerConfig = configuration.getLoggerConfig(getClass().getName());
+      loggerConfig.setLevel(Level.DEBUG);
+      ctx.updateLoggers();
+    }
+  }
+
+  protected void finishConnect(CouchbaseConfig config) throws Exception {
+    boolean basic = config.getBasic();
+    if (!basic && cluster != null) {
+      cluster.waitUntilReady(Duration.ofSeconds(15));
+      try {
+        if (bucketName != null) {
+          bucket = cluster.bucket(bucketName);
+        }
+      } catch (BucketNotFoundException ignored) {
+      }
+      loadClusterInfo();
+    }
+  }
+
+  protected void logError(Exception error, String connectString) {
+    logger.error("Connection string: {}", connectString);
+    logger.error(error.getMessage(), error);
+  }
+
+  protected void loadClusterInfo() {
+    HttpResponse response = cluster.httpClient().get(
+        HttpTarget.manager(),
+        HttpPath.of("/pools/default"));
+    try {
+      clusterInfo = mapper.readTree(response.contentAsString());
+      String clusterFullVersion = clusterInfo.get("nodes").get(0).get("version").asText();
+      clusterVersion = clusterFullVersion.split("-")[0];
+      buildNumber = Integer.parseInt(clusterFullVersion.split("-")[1]);
+      clusterEdition = clusterFullVersion.split("-")[2];
+      majorRevision = Integer.parseInt(clusterVersion.split("\\.")[0]);
+      minorRevision = Integer.parseInt(clusterVersion.split("\\.")[1]);
+      patchRevision = Integer.parseInt(clusterVersion.split("\\.")[2]);
+
+      hostMap.removeAll();
+      for (JsonNode node : clusterInfo.get("nodes")) {
+        String hostEntry = node.get("hostname").asText();
+        String[] endpoint = hostEntry.split(":", 2);
+        String nodeHostname = endpoint[0];
+        JsonNode services = node.get("services");
+
+        ObjectNode entry = mapper.createObjectNode();
+        entry.put("hostname", nodeHostname);
+        entry.set("services", services);
+
+        hostMap.add(entry);
+      }
+
+      logger.debug("Connected to Couchbase Server version {} with {} member(s)", clusterVersion, hostMap.size());
+
+      if (hostMap.size() == 1) {
+        bucketReplicas = 0;
+        logger.debug("Single node cluster: setting bucket replicas to {}", bucketReplicas);
+      }
+    } catch (JsonProcessingException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  protected int getMemQuota() {
+    int used = (int) (clusterInfo.get("storageTotals").get("ram").get("quotaUsedPerNode").asLong() / 1048576);
+    int total = (int) (clusterInfo.get("storageTotals").get("ram").get("quotaTotalPerNode").asLong() / 1048576);
+    return total - used;
+  }
+
+  protected abstract void createBucketImpl(BucketSettings bucketSettings);
+
+  protected abstract void dropBucketImpl(String name);
+
+  protected abstract void createClusterImpl(CouchbaseConfig config, Map<String, String> options);
+
+  protected abstract void destroyClusterImpl();
+
+  protected abstract String streamHostname();
+
+  protected abstract boolean supportsRbacRest();
+
+  @Override
+  public void createCluster(CouchbaseConfig config) {
+    createCluster(config, null);
+  }
+
+  @Override
+  public void createCluster(CouchbaseConfig config, Map<String, String> options) {
+    applyConfig(config);
+    createClusterImpl(config, options);
+  }
+
+  @Override
+  public void destroyCluster() {
+    destroyClusterImpl();
+  }
+
+  @Override
+  public CouchbaseStream stream(String bucketName) {
+    return new CouchbaseStream(streamHostname(), username, password, bucketName, true);
+  }
+
+  @Override
+  public CouchbaseStream stream(String bucketName, String scopeName, String collectionName) {
+    return new CouchbaseStream(streamHostname(), username, password, bucketName, true, scopeName, collectionName);
+  }
+
+  @Override
+  public String adminUserValue() {
+    return username;
+  }
+
+  @Override
+  public String adminPasswordValue() {
+    return password;
+  }
+
+  @Override
+  public String getBucketName() {
+    return bucketName;
+  }
+
+  @Override
+  public String getScopeName() {
+    return scopeName;
+  }
+
+  @Override
+  public String getCollectionName() {
+    return collectionName;
+  }
+
+  @Override
+  public Cluster getCluster() {
+    return cluster;
+  }
+
+  @Override
+  public Bucket getBucket() {
+    return bucket;
+  }
+
+  @Override
+  public Scope getScope() {
+    return scope;
+  }
+
+  @Override
+  public Collection getCollection() {
+    return collection;
+  }
+
+  @Override
+  public ReactiveCollection getReactiveCollection() {
+    if (collection == null) {
+      throw new RuntimeException("Collection is not connected");
+    }
+    return collection.reactive();
+  }
+
+  @Override
+  public String getKeyspace() {
+    return String.format("%s.%s.%s", bucketName, scopeName, collectionName);
+  }
+
+  @Override
+  public long getIndexNodeCount() {
+    Stream<JsonNode> stream = StreamSupport.stream(hostMap.spliterator(), false);
+    return stream.filter(e -> {
+      try {
+        List<String> services = mapper.readerForListOf(String.class).readValue(e.get("services"));
+        return services.contains("index");
+      } catch (IOException ex) {
+        return false;
+      }
+    }).count();
+  }
+
+  @Override
+  public List<String> listBuckets() {
+    return new ArrayList<>(cluster.buckets().getAllBuckets().keySet());
+  }
+
+  @Override
+  public Boolean isBucket(String bucket) {
+    return listBuckets().contains(bucket);
+  }
+
+  @Override
+  public Boolean isBucket() {
+    return listBuckets().contains(bucketName);
+  }
+
+  @Override
+  public void clusterWait() {
+    cluster.waitUntilReady(Duration.ofSeconds(30), waitUntilReadyOptions()
+        .serviceTypes(ServiceType.KV, ServiceType.QUERY, ServiceType.VIEWS)
+        .desiredState(ClusterState.ONLINE));
+    waitForClusterOperationsReady();
+  }
+
+  protected void waitForClusterOperationsReady() {
+    ClusterCreateSupport.ClusterRestEndpoint endpoint = clusterRestEndpoint();
+    if (endpoint.host() == null || endpoint.host().isBlank() || username == null || password == null) {
+      return;
+    }
+    ClusterCreateSupport.waitForQueryReady(endpoint, username, password);
+    ClusterCreateSupport.waitForRebalanceComplete(endpoint, username, password);
+  }
+
+  protected ClusterCreateSupport.ClusterRestEndpoint clusterRestEndpoint() {
+    return ClusterCreateSupport.ClusterRestEndpoint.forServer(connectTarget, Boolean.TRUE.equals(useSsl));
+  }
+
+  @Override
+  public void clusterPing() {
+    logger.debug("clusterPing");
+    PingResult result = cluster.ping();
+    for (Map.Entry<ServiceType, List<EndpointPingReport>> entry : result.endpoints().entrySet()) {
+      for (EndpointPingReport report : entry.getValue()) {
+        logger.debug("ping: {}: {}", entry.getKey(), report.toString());
+      }
+    }
+  }
+
+  @Override
+  public void connectBucket(String name) {
+    bucketName = name;
+    bucket = cluster.bucket(bucketName);
+  }
+
+  @Override
+  public void connectBucket() {
+    bucket = cluster.bucket(bucketName);
+  }
+
+  @Override
+  public void connectScope(String name) {
+    scopeName = name;
+    scope = bucket.scope(scopeName);
+  }
+
+  @Override
+  public void connectScope() {
+    scope = bucket.scope(scopeName);
+  }
+
+  @Override
+  public void connectCollection(String name) {
+    collectionName = name;
+    collection = scope.collection(collectionName);
+  }
+
+  @Override
+  public void connectCollection(String scopeName, String collectionName) {
+    this.scopeName = scopeName;
+    this.collectionName = collectionName;
+    collection = bucket.scope(scopeName).collection(collectionName);
+  }
+
+  @Override
+  public void connectCollection() {
+    collection = bucket.scope(scopeName).collection(collectionName);
+  }
+
+  @Override
+  public void connectKeyspace(String bucketName, String scopeName, String collectionName) {
+    this.bucketName = bucketName;
+    this.scopeName = scopeName;
+    this.collectionName = collectionName;
+    connectBucket(bucketName);
+    connectScope(scopeName);
+    connectCollection(collectionName);
+  }
+
+  @Override
+  public void connectKeyspace() {
+    connectKeyspace(bucketName, scopeName, collectionName);
+  }
+
+  @Override
+  public void createBucket() {
+    int quota = getMemQuota();
+    bucketCreate(bucketName, quota, bucketReplicas, bucketType, bucketStorage);
+  }
+
+  @Override
+  public void createBucket(String name) {
+    int quota = getMemQuota();
+    bucketCreate(name, quota, bucketReplicas, bucketType, bucketStorage);
+  }
+
+  @Override
+  public void createBucket(String name, int quota) {
+    bucketCreate(name, quota, bucketReplicas, bucketType, bucketStorage);
+  }
+
+  @Override
+  public void createBucket(String name, int quota, int replicas) {
+    bucketCreate(name, quota, replicas, bucketType, bucketStorage);
+  }
+
+  @Override
+  public void createBucket(String name, int quota, int replicas, String storageBackend) {
+    bucketCreate(name, quota, replicas, bucketType, CouchbaseConnect.convertStorageBackend(storageBackend));
+  }
+
+  @Override
+  public void createBucket(String name, int quota, int replicas, String bucketType, String storageBackend) {
+    bucketCreate(name, quota, replicas, CouchbaseConnect.convertBucketType(bucketType), CouchbaseConnect.convertStorageBackend(storageBackend));
+  }
+
+  @Override
+  public void createBucket(String name, int quota, int replicas, BucketType bucketType, StorageBackend storageBackend) {
+    bucketCreate(name, quota, replicas, bucketType, storageBackend);
+  }
+
+  @Override
+  public void createBucket(BucketData bucketData) {
+    bucketCreate(
+        bucketData.getName(),
+        bucketData.getQuota(),
+        bucketData.getReplicas(),
+        CouchbaseConnect.convertBucketType(bucketData.getType()),
+        CouchbaseConnect.convertStorageBackend(bucketData.getStorage()));
+  }
+
+  @Override
+  public void bucketCreate(String name, int quota, int replicas, BucketType bucketType, StorageBackend storageBackend) {
+    if (isBucket(name)) {
+      return;
+    }
+    if (quota == 0) {
+      quota = 128;
+    }
+    BucketSettings bucketSettings = BucketSettings.create(name)
+        .flushEnabled(false)
+        .replicaIndexes(true)
+        .ramQuotaMB(quota)
+        .numReplicas(replicas)
+        .bucketType(bucketType)
+        .storageBackend(storageBackend)
+        .conflictResolutionType(ConflictResolutionType.SEQUENCE_NUMBER);
+    createBucketImpl(bucketSettings);
+  }
+
+  @Override
+  public void dropBucket() {
+    dropBucket(bucketName);
+  }
+
+  @Override
+  public void createScope(String bucketName, String scopeName) {
+    if (Objects.equals(scopeName, "_default")) {
+      return;
+    }
+    bucket = cluster.bucket(bucketName);
+    CollectionManager collectionManager = bucket.collections();
+    try {
+      collectionManager.createScope(scopeName);
+    } catch (ScopeExistsException e) {
+      logger.debug("Scope {} already exists in cluster", scopeName);
+    }
+  }
+
+  @Override
+  public void createScope() {
+    createScope(bucketName, scopeName);
+  }
+
+  @Override
+  public void createCollection(String bucketName, String scopeName, String collectionName) {
+    if (Objects.equals(collectionName, "_default")) {
+      return;
+    }
+    bucket = cluster.bucket(bucketName);
+    CollectionManager collectionManager = bucket.collections();
+    try {
+      collectionManager.createCollection(scopeName, collectionName);
+    } catch (CollectionExistsException e) {
+      logger.debug("Collection {} already exists in cluster", collectionName);
+    }
+  }
+
+  @Override
+  public void createCollection() {
+    createCollection(bucketName, scopeName, collectionName);
+  }
+
+  @Override
+  public boolean collectionExists(String bucketName, String scopeName, String collectionName) {
+    Bucket bucket = cluster.bucket(bucketName);
+    try {
+      Scope scope = bucket.scope(scopeName);
+      scope.collection(collectionName);
+      return true;
+    } catch (CollectionNotFoundException e) {
+      return false;
+    }
+  }
+
+  @Override
+  public void createPrimaryIndex() {
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, bucketReplicas);
+  }
+
+  @Override
+  public void createPrimaryIndex(String bucketName, String scopeName, String collectionName) {
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, bucketReplicas);
+  }
+
+  @Override
+  public void createPrimaryIndex(String bucketName, String scopeName, String collectionName, int replicaCount) {
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, replicaCount);
+  }
+
+  private void createPrimaryIndexInternal(String bucketName, String scopeName, String collectionName, int replicaCount) {
+    Bucket bucket = cluster.bucket(bucketName);
+    Scope scope = bucket.scope(scopeName);
+    Collection collection = scope.collection(collectionName);
+
+    CollectionQueryIndexManager queryIndexMgr = collection.queryIndexes();
+    CreatePrimaryQueryIndexOptions options = CreatePrimaryQueryIndexOptions.createPrimaryQueryIndexOptions()
+        .deferred(false)
+        .numReplicas(replicaCount)
+        .ignoreIfExists(true);
+
+    logger.debug("Creating Primary Index: Collection: {} replicas: {}", collectionName, replicaCount);
+    runWithIndexCreationRetry(() -> {
+      queryIndexMgr.createPrimaryIndex(options);
+      queryIndexMgr.watchIndexes(Collections.singletonList("#primary"), Duration.ofSeconds(30));
+    });
+  }
+
+  @Override
+  public void createSecondaryIndex(String indexName, List<String> indexKeys) {
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, bucketReplicas);
+  }
+
+  @Override
+  public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys) {
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, bucketReplicas);
+  }
+
+  @Override
+  public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys, int replicaCount) {
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, replicaCount);
+  }
+
+  private void createSecondaryIndexInternal(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys, int replicaCount) {
+    Bucket bucket = cluster.bucket(bucketName);
+    Scope scope = bucket.scope(scopeName);
+    Collection collection = scope.collection(collectionName);
+
+    CollectionQueryIndexManager queryIndexMgr = collection.queryIndexes();
+    CreateQueryIndexOptions options = CreateQueryIndexOptions.createQueryIndexOptions()
+        .deferred(false)
+        .numReplicas(replicaCount)
+        .ignoreIfExists(true);
+
+    logger.debug("Creating GSI: Collection: {} Name: {} Fields: {} replicas: {}", collectionName, indexName, indexKeys, replicaCount);
+    runWithIndexCreationRetry(() -> {
+      queryIndexMgr.createIndex(indexName, indexKeys, options);
+      queryIndexMgr.watchIndexes(Collections.singletonList(indexName), Duration.ofSeconds(30));
+    });
+  }
+
+  private void runWithIndexCreationRetry(Runnable action) {
+    int retryCount = 30;
+    Duration wait = Duration.ofSeconds(2);
+    RuntimeException lastError = null;
+    for (int attempt = 1; attempt <= retryCount; attempt++) {
+      try {
+        waitForClusterOperationsReady();
+        action.run();
+        return;
+      } catch (RuntimeException e) {
+        lastError = e;
+        if (attempt == retryCount || !isRetryableIndexError(e)) {
+          throw e;
+        }
+        logger.debug("Index creation retry {}/{}: {}", attempt, retryCount, e.getMessage());
+        sleep(wait);
+      }
+    }
+    if (lastError != null) {
+      throw lastError;
+    }
+  }
+
+  private boolean isRetryableIndexError(RuntimeException error) {
+    String message = error.getMessage();
+    if (message == null) {
+      return false;
+    }
+    String lower = message.toLowerCase();
+    return lower.contains("rebalance in progress")
+        || lower.contains("keyspace not found")
+        || lower.contains("indexing.error")
+        || lower.contains("query service is not available")
+        || lower.contains("channel_closed")
+        || lower.contains("no_more_retries")
+        || lower.contains("endpoint_not_available");
+  }
+
+  private void sleep(Duration duration) {
+    try {
+      Thread.sleep(duration.toMillis());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public void createSearchIndex(JsonNode config) {
+    if (cluster == null) {
+      throw new RuntimeException("Cluster is not connected");
+    }
+    SearchIndexManager search = cluster.searchIndexes();
+    try {
+      search.getIndex(config.get("name").asText());
+    } catch (IndexNotFoundException e) {
+      SearchIndex index = SearchIndex.fromJson(config.toString());
+      search.upsertIndex(index);
+    }
+  }
+
+  @Override
+  public Set<Role> defaultRoles() {
+    return new HashSet<>(Arrays.asList(
+        new Role("data_reader", "*"),
+        new Role("query_select", "*"),
+        new Role("data_writer", "*"),
+        new Role("query_insert", "*"),
+        new Role("query_delete", "*"),
+        new Role("query_manage_index", "*")
+    ));
+  }
+
+  @Override
+  public Set<Role> constructRoles(List<RoleData> roles) {
+    if (roles.isEmpty()) {
+      return defaultRoles();
+    }
+    Set<Role> roleList = new HashSet<>();
+    for (RoleData roleData : roles) {
+      Role role;
+      if (!roleData.getScopeName().equals("*") || !roleData.getCollectionName().equals("*")) {
+        role = new Role(roleData.getRole(),
+            roleData.getBucketName(),
+            roleData.getScopeName(),
+            roleData.getCollectionName());
+      } else if (!roleData.getBucketName().equals("*")) {
+        role = new Role(roleData.getRole(), roleData.getBucketName());
+      } else {
+        role = new Role(roleData.getRole());
+      }
+      roleList.add(role);
+    }
+    return roleList;
+  }
+
+  @Override
+  public void createUser(String userName, String passWord, String fullName, List<String> groups, List<RoleData> roles) {
+    UserManager um = cluster.users();
+    User user = new User(userName);
+    if (!groups.isEmpty()) {
+      user.groups(groups);
+    }
+    user.roles(constructRoles(roles));
+    if (passWord != null && !passWord.isEmpty()) {
+      user.password(passWord);
+    } else {
+      user.password(password);
+    }
+    if (fullName != null && !fullName.isEmpty()) {
+      user.displayName(fullName);
+    }
+    logger.debug("Creating user {}", user);
+    um.upsertUser(user);
+  }
+
+  @Override
+  public void createGroup(String groupName, String description, List<RoleData> roles) {
+    UserManager um = cluster.users();
+    Group group = new Group(groupName);
+    if (description != null && !description.isEmpty()) {
+      group.description(description);
+    }
+    group.roles(constructRoles(roles));
+    logger.debug("Creating group {}", group);
+    um.upsertGroup(group);
+  }
+
+  @Override
+  public JsonNode get(String id) {
+    if (collection == null) {
+      throw new RuntimeException("Collection is not connected");
+    }
+    try {
+      String result = collection.get(id, getOptions().transcoder(RawJsonTranscoder.INSTANCE)).contentAs(String.class);
+      return mapper.readTree(result);
+    } catch (DocumentNotFoundException e) {
+      return null;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public void upsert(String id, Object content) {
+    if (collection == null) {
+      throw new RuntimeException("Collection is not connected");
+    }
+    try {
+      collection.upsert(id, content, upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).timeout(Duration.ofSeconds(5)));
+    } catch (Exception e) {
+      logger.error(e.getMessage(), e);
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public List<JsonNode> query(String queryString) {
+    if (cluster == null) {
+      throw new RuntimeException("Bucket is not connected");
+    }
+    TypeRef<Map<String, Object>> typeRef = new TypeRef<Map<String, Object>>() {};
+    try {
+      return cluster.reactive().query(queryString, queryOptions()
+              .scanConsistency(QueryScanConsistency.REQUEST_PLUS)
+              .maxParallelism(maxParallelism))
+          .flatMapMany(res -> res.rowsAs(typeRef))
+          .map(Map::values)
+          .flatMapIterable(o -> mapper.convertValue(o, JsonNode.class))
+          .collectList()
+          .block();
+    } catch (Exception e) {
+      logger.error(e.getMessage(), e);
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public List<String> getStringList(JsonNode node) {
+    try {
+      return mapper.readerFor(new TypeReference<List<String>>() {}).readValue(node);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public List<SearchIndexData> getSearchIndexes(String bucket, String scope) {
+    List<SearchIndexData> result = new ArrayList<>();
+    try {
+      SearchIndexManager search = cluster.searchIndexes();
+      for (SearchIndex index : search.getAllIndexes()) {
+        if (!index.sourceName().equals(bucket)) {
+          continue;
+        }
+        String bucketName = index.name().split("\\.")[0];
+        String scopeName = index.name().split("\\.")[1];
+        String indexName = index.name().split("\\.")[2];
+        if (!scopeName.equals(scope)) {
+          continue;
+        }
+        SearchIndexData i = new SearchIndexData();
+        i.setName(indexName);
+        i.setBucket(bucketName);
+        i.setScope(scopeName);
+        i.setConfig(mapper.readTree(index.toJson()));
+        result.add(i);
+      }
+    } catch (JsonProcessingException e) {
+      throw new RuntimeException(e);
+    } catch (ServiceNotAvailableException e) {
+      logger.debug("Search service is not configured in the cluster");
+    }
+    return result;
+  }
+
+  @Override
+  public List<IndexData> getIndexes(String bucket, String collection) {
+    List<JsonNode> indexes = query("SELECT * FROM system:indexes;");
+    List<IndexData> result = new ArrayList<>();
+    int replicas = -1;
+    for (JsonNode index : indexes) {
+      if (collection.equals("_default")) {
+        if (!index.get("keyspace_id").asText().equals(bucket)) {
+          continue;
+        }
+      } else {
+        if (!index.get("keyspace_id").asText().equals(collection)) {
+          continue;
+        }
+      }
+      if (index.has("using") && !index.get("using").asText().equals("gsi")) {
+        continue;
+      }
+      if (index.has("metadata")) {
+        if (index.get("metadata").has("num_replica")) {
+          replicas = index.get("metadata").get("num_replica").asInt();
+        }
+      }
+      if (index.has("is_primary") && index.get("is_primary").asBoolean()) {
+        IndexData i = new IndexData();
+        i.setTable(index.get("keyspace_id").asText());
+        i.setName(index.get("name").asText());
+        i.setNumReplicas(replicas);
+        i.setPrimary(true);
+        result.add(i);
+      } else {
+        IndexData i = new IndexData();
+        i.setIndexKeys(getStringList(index.get("index_key")));
+        i.setTable(index.get("keyspace_id").asText());
+        i.setName(index.get("name").asText());
+        i.setNumReplicas(replicas);
+        i.setCondition(index.has("condition") ? index.get("condition").asText() : "");
+        result.add(i);
+      }
+    }
+    return result;
+  }
+
+  @Override
+  public List<TableData> getBuckets() {
+    List<TableData> result = new ArrayList<>();
+    for (Map.Entry<String, BucketSettings> entry : cluster.buckets().getAllBuckets().entrySet()) {
+      BucketSettings bucketSettings = entry.getValue();
+      String bucketName = bucketSettings.name();
+      Bucket bucket = cluster.bucket(bucketName);
+      CollectionManager cm = bucket.collections();
+      for (ScopeSpec scope : cm.getAllScopes()) {
+        String scopeName = scope.name();
+        if (scopeName.equals("_system")) {
+          continue;
+        }
+        for (CollectionSpec collection : scope.collections()) {
+          String collectionName = collection.name();
+          try {
+            BucketData b = new BucketData();
+            b.setName(bucketName);
+            b.setType(bucketSettings.bucketType().toString());
+            b.setQuota((int) bucketSettings.ramQuotaMB());
+            b.setReplicas(bucketSettings.numReplicas());
+            b.setEviction(bucketSettings.evictionPolicy().toString());
+            b.setTtl((int) bucketSettings.maxExpiry().getSeconds());
+            b.setStorage(bucketSettings.storageBackend().toString());
+            b.setResolution(bucketSettings.conflictResolutionType().toString());
+            b.setPassword("");
+            TableData t = new TableData();
+            t.setName(bucketSettings.name());
+            t.setBucket(b);
+            ScopeData s = new ScopeData();
+            s.setName(scopeName);
+            CollectionData c = new CollectionData();
+            c.setName(collectionName);
+            c.setTtl((int) collection.maxExpiry().getSeconds());
+            c.setHistory(collection.history() != null ? collection.history() : false);
+            t.setScope(s);
+            t.setCollection(c);
+            t.setIndexes(getIndexes(bucketName, collectionName));
+            t.setSearchIndexes(getSearchIndexes(bucketName, scopeName));
+            result.add(t);
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  @Override
+  public RoleData parseRole(JsonNode role) {
+    RoleData r = new RoleData();
+    logger.debug(role.toPrettyString());
+    r.setRole(role.get("role").asText());
+    r.setBucketName(role.hasNonNull("bucket_name") ? role.get("bucket_name").asText() : "*");
+    r.setScopeName(role.hasNonNull("scope_name") ? role.get("scope_name").asText() : "*");
+    r.setCollectionName(role.hasNonNull("collection_name") ? role.get("collection_name").asText() : "*");
+    return r;
+  }
+
+  @Override
+  public List<UserData> getUsers() {
+    if (!supportsRbacRest()) {
+      return new ArrayList<>();
+    }
+    if (majorRevision < 5) {
+      return new ArrayList<>();
+    }
+    REST client = new REST(connectTarget, username, password, useSsl, adminPort).enableDebug(enableDebug);
+    List<UserData> result = new ArrayList<>();
+    try {
+      String endpoint = "settings/rbac/users";
+      JsonNode results = client.get(endpoint).validate().json();
+      for (JsonNode user : results) {
+        boolean local = user.has("domain") && user.get("domain").asText().equals("local");
+        if (local) {
+          UserData u = new UserData();
+          u.setId(user.get("id").asText());
+          u.setName(user.get("name").asText());
+          u.setRoles(new ArrayList<>());
+          u.setGroups(new ArrayList<>());
+          if (user.has("roles")) {
+            for (JsonNode role : user.get("roles")) {
+              u.getRoles().add(parseRole(role));
+            }
+          }
+          if (user.has("groups")) {
+            for (JsonNode group : user.get("groups")) {
+              u.getGroups().add(group.asText());
+            }
+          }
+          result.add(u);
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+    return result;
+  }
+
+  @Override
+  public List<GroupData> getGroups() {
+    if (!supportsRbacRest()) {
+      return new ArrayList<>();
+    }
+    if (majorRevision < 6) {
+      if (minorRevision < 5) {
+        return new ArrayList<>();
+      }
+    }
+    REST client = new REST(connectTarget, username, password, useSsl, adminPort);
+    List<GroupData> result = new ArrayList<>();
+    try {
+      String endpoint = "settings/rbac/groups";
+      JsonNode results = client.get(endpoint).validate().json();
+      for (JsonNode group : results) {
+        boolean ldap = group.has("ldap_group_ref") && !group.get("ldap_group_ref").isEmpty();
+        if (!ldap) {
+          GroupData g = new GroupData();
+          g.setId(group.get("id").asText());
+          g.setDescription(group.get("description").asText());
+          g.setRoles(new ArrayList<>());
+          if (group.has("roles")) {
+            for (JsonNode role : group.get("roles")) {
+              g.getRoles().add(parseRole(role));
+            }
+          }
+          result.add(g);
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+    return result;
+  }
+
+  @Override
+  public void createBuckets(List<TableData> buckets) {
+    for (TableData bucket : buckets) {
+      String bucketName = bucket.getName();
+      String scopeName = bucket.getScope().getName();
+      String collectionName = bucket.getCollection().getName();
+
+      logger.info("Creating bucket {}", bucketName);
+      createBucket(bucket.getBucket());
+
+      if (!Objects.equals(scopeName, "_default")) {
+        logger.info("Creating scope {}.{}", bucketName, scopeName);
+        createScope(bucketName, scopeName);
+      }
+
+      if (!Objects.equals(collectionName, "_default")) {
+        logger.info("Creating collection {}.{}.{}", bucketName, scopeName, collectionName);
+        createCollection(bucketName, scopeName, collectionName);
+      }
+
+      for (IndexData index : bucket.getIndexes()) {
+        int replicas = index.getNumReplicas();
+        if (replicas < 0) {
+          replicas = bucketReplicas;
+        }
+        final int replicaNum = replicas;
+        try {
+          logger.info("{} {} {} {} {} {}", bucketName, scopeName, collectionName, index.getName(), index.getIndexKeys(), replicaNum);
+          if (index.isPrimary()) {
+            logger.info("Creating primary index on keyspace {}.{}.{}", bucketName, scopeName, collectionName);
+            RetryLogic.retryVoid(() -> createPrimaryIndex(bucketName, scopeName, collectionName, replicaNum));
+          } else {
+            logger.info("Creating secondary index {} on keyspace {}.{}.{}", index.getName(), bucketName, scopeName, collectionName);
+            RetryLogic.retryVoid(() -> createSecondaryIndex(bucketName, scopeName, collectionName, index.getName(), index.getIndexKeys(), replicaNum));
+          }
+        } catch (Exception e) {
+          throw new RuntimeException("Index creation failed: " + e.getMessage(), e);
+        }
+      }
+
+      for (SearchIndexData searchIndex : bucket.getSearchIndexes()) {
+        logger.info("Creating search index {}", searchIndex.getName());
+        ObjectNode config = searchIndex.getConfig().deepCopy();
+        if (config.has("sourceUUID")) {
+          config.remove("sourceUUID");
+        }
+        if (config.has("uuid")) {
+          config.remove("uuid");
+        }
+        config.put("sourceType", "gocbcore");
+        config.put("name", searchIndex.getName());
+        logger.debug("Search Index config:\n{}", searchIndex.getConfig().toPrettyString());
+        createSearchIndex(config);
+      }
+    }
+  }
+}
