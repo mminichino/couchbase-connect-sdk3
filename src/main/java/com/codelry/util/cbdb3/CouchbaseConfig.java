@@ -363,4 +363,13 @@ public class CouchbaseConfig {
   public Properties getProperties() {
     return properties;
   }
+
+  public boolean isCapella() {
+    return isCapella(properties);
+  }
+
+  public static boolean isCapella(Properties properties) {
+    String token = properties.getProperty(CAPELLA_TOKEN);
+    return token != null && !token.isBlank();
+  }
 }
