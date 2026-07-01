@@ -20,6 +20,10 @@ public class CouchbaseConfig {
   public static final String COUCHBASE_REPLICA_NUM = "couchbase.replicaNum";
   public static final String COUCHBASE_TTL = "couchbase.ttlSeconds";
   public static final String COUCHBASE_MAX_PARALLELISM = "couchbase.maxParallelism";
+  public static final String COUCHBASE_KV_ENDPOINTS = "couchbase.kvEndpoints";
+  public static final String COUCHBASE_KV_TIMEOUT = "couchbase.kvTimeout";
+  public static final String COUCHBASE_CONNECT_TIMEOUT = "couchbase.connectTimeout";
+  public static final String COUCHBASE_QUERY_TIMEOUT = "couchbase.queryTimeout";
   public static final String COUCHBASE_BUCKET_TYPE = "couchbase.bucketType";
   public static final String COUCHBASE_STORAGE_TYPE = "couchbase.storageBackend";
   public static final String COUCHBASE_QUICK_CONNECT = "couchbase.quickConnect";
@@ -72,6 +76,10 @@ public class CouchbaseConfig {
   private String collectionName;
   private int bucketReplicas = 1;
   private int maxParallelism = 0;
+  private int kvEndpoints = 8;
+  private int kvTimeout = 5;
+  private int connectTimeout = 15;
+  private int queryTimeout = 75;
   private BucketType bucketType = BucketType.COUCHBASE;
   private StorageBackend bucketStorage = StorageBackend.COUCHSTORE;
   private int ttlSeconds = 0;
@@ -106,6 +114,26 @@ public class CouchbaseConfig {
 
   public CouchbaseConfig maxParallelism(final int count) {
     this.maxParallelism = count;
+    return this;
+  }
+
+  public CouchbaseConfig kvEndpoints(final int count) {
+    this.kvEndpoints = count;
+    return this;
+  }
+
+  public CouchbaseConfig kvTimeout(final int timeout) {
+    this.kvTimeout = timeout;
+    return this;
+  }
+
+  public CouchbaseConfig connectTimeout(final int timeout) {
+    this.connectTimeout = timeout;
+    return this;
+  }
+
+  public CouchbaseConfig queryTimeout(final int timeout) {
+    this.queryTimeout = timeout;
     return this;
   }
 
@@ -249,6 +277,10 @@ public class CouchbaseConfig {
     this.sslMode = properties.getProperty(COUCHBASE_SSL_MODE, DEFAULT_SSL_SETTING).equals("true");
     this.bucketReplicas = Integer.parseInt(properties.getProperty(COUCHBASE_REPLICA_NUM, "1"));
     this.maxParallelism = Integer.parseInt(properties.getProperty(COUCHBASE_MAX_PARALLELISM, "0"));
+    this.kvEndpoints = Integer.parseInt(properties.getProperty(COUCHBASE_KV_ENDPOINTS, "8"));
+    this.kvTimeout = Integer.parseInt(properties.getProperty(COUCHBASE_KV_TIMEOUT, "5"));
+    this.connectTimeout = Integer.parseInt(properties.getProperty(COUCHBASE_CONNECT_TIMEOUT, "15"));
+    this.queryTimeout = Integer.parseInt(properties.getProperty(COUCHBASE_QUERY_TIMEOUT, "75"));
     this.ttlSeconds = Integer.parseInt(properties.getProperty(COUCHBASE_TTL, "0"));
     this.bucketType = convertBucketType(properties.getProperty(COUCHBASE_BUCKET_TYPE, "couchbase"));
     this.bucketStorage = convertStorageBackend(properties.getProperty(COUCHBASE_STORAGE_TYPE, "couchstore"));
@@ -338,6 +370,22 @@ public class CouchbaseConfig {
 
   public int getMaxParallelism() {
     return maxParallelism;
+  }
+
+  public int getKvEndpoints() {
+    return kvEndpoints;
+  }
+
+  public int getKvTimeout() {
+    return kvTimeout;
+  }
+
+  public int getConnectTimeout() {
+    return connectTimeout;
+  }
+
+  public int getQueryTimeout() {
+    return queryTimeout;
   }
 
   public BucketType getBucketType() {

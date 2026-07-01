@@ -73,6 +73,10 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   protected int adminPort;
   protected int ttlSeconds;
   protected int maxParallelism;
+  protected int kvEndpoints;
+  protected int kvTimeout;
+  protected int connectTimeout;
+  protected int queryTimeout;
   protected final ObjectMapper mapper = new ObjectMapper();
   protected JsonNode clusterInfo = mapper.createObjectNode();
   protected String clusterVersion;
@@ -98,6 +102,10 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
     bucketType = config.getBucketType();
     bucketStorage = config.getBucketStorage();
     maxParallelism = config.getMaxParallelism();
+    kvEndpoints = config.getKvEndpoints();
+    kvTimeout = config.getKvTimeout();
+    connectTimeout = config.getConnectTimeout();
+    queryTimeout = config.getQueryTimeout();
     properties.clear();
     properties.putAll(config.getProperties());
   }
