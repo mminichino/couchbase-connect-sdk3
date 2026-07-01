@@ -22,7 +22,11 @@ import com.couchbase.client.java.manager.user.Role;
 public interface CouchbaseConnect {
 
   static CouchbaseConnect getInstance() {
-    return Server.getInstance();
+    return AutoCouchbaseConnect.getInstance();
+  }
+
+  static CouchbaseConnect resolve(CouchbaseConfig config) {
+    return config.isCapella() ? Capella.getInstance() : Server.getInstance();
   }
 
   static BucketType convertBucketType(String bucketType) {
