@@ -70,14 +70,14 @@ public final class Server extends AbstractCouchbaseConnect {
         }
 
         Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
-            .numKvConnections(4)
+            .numKvConnections(kvEndpoints)
             .networkResolution(NetworkResolution.AUTO)
             .enableMutationTokens(false);
 
         Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
-            .kvTimeout(Duration.ofSeconds(5))
-            .connectTimeout(Duration.ofSeconds(15))
-            .queryTimeout(Duration.ofSeconds(120));
+            .kvTimeout(Duration.ofSeconds(kvTimeout))
+            .connectTimeout(Duration.ofSeconds(connectTimeout))
+            .queryTimeout(Duration.ofSeconds(queryTimeout));
 
         Authenticator authenticator;
         if (clientCert != null) {

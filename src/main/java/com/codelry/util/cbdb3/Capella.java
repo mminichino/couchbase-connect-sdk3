@@ -1,12 +1,6 @@
 package com.codelry.util.cbdb3;
 
-import com.codelry.util.capella.CapellaBucket;
-import com.codelry.util.capella.CapellaCluster;
-import com.codelry.util.capella.CapellaConnect;
-import com.codelry.util.capella.CapellaConnectivity;
-import com.codelry.util.capella.CapellaOrganization;
-import com.codelry.util.capella.CapellaProject;
-import com.codelry.util.capella.CouchbaseCapella;
+import com.codelry.util.capella.*;
 import com.codelry.util.capella.exceptions.CapellaAPIError;
 import com.codelry.util.capella.exceptions.NotFoundException;
 import com.codelry.util.capella.logic.BucketData;
@@ -18,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Couchbase Capella connection using the Capella API to resolve the connect string.
+ * Couchbase Capella connection using the Capella API to resolve the connection string.
  */
 public final class Capella extends AbstractCouchbaseConnect {
   private static Capella instance;
@@ -59,7 +53,13 @@ public final class Capella extends AbstractCouchbaseConnect {
         CapellaProject project = CapellaProject.getInstance(organization);
         capellaCluster = CapellaCluster.getInstance(project, databaseName);
         capellaCluster.getCredentials().addCredentials(username, password);
-        cluster = CapellaConnect.connect(capellaCluster);
+        CapellaClusterConfig capellaConfig = new CapellaClusterConfig()
+            .kvEndpoints(kvEndpoints)
+            .kvTimeout(kvTimeout)
+            .connectTimeout(connectTimeout)
+            .queryTimeout(queryTimeout)
+            .build();
+        cluster = CapellaConnect.connect(capellaCluster, capellaConfig);
         connectTarget = databaseName;
         streamHost = extractHost(capellaCluster.getConnectString());
 
