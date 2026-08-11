@@ -1,5 +1,6 @@
 package com.codelry.util.cbdb3;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Assertions;
@@ -34,7 +35,7 @@ public class ServerDriver1Test extends AbstractServerPerClassTestcontainerTest {
     Assertions.assertTrue(result);
     db.createScope(bucket, scope);
     db.createCollection(bucket, scope, collection);
-    db.clusterWait();
+    db.waitUntilCollectionQueryReady();
     db.createPrimaryIndex(bucket, scope, collection);
     db.createSecondaryIndex(bucket, scope, collection, "idx_test", List.of("data"));
     ObjectNode doc = new ObjectMapper().createObjectNode();
@@ -42,6 +43,10 @@ public class ServerDriver1Test extends AbstractServerPerClassTestcontainerTest {
     db.connectBucket(bucket);
     db.connectCollection(scope, collection);
     db.upsert("doc::1", doc);
+    String keyspace = db.getKeyspace();
+    List<JsonNode> rows = db.query("SELECT * FROM " + keyspace + " WHERE META().id = 'doc::1'");
+    Assertions.assertEquals(1, rows.size());
+    Assertions.assertEquals(1, rows.get(0).path("data").asInt());
     db.dropBucket(bucket);
     db.disconnect();
   }

@@ -32,7 +32,8 @@ public final class Server extends AbstractCouchbaseConnect {
   private static Server instance;
   private volatile ClusterEnvironment environment;
 
-  private Server() {}
+  private Server() {
+  }
 
   public static Server getInstance() {
     if (instance == null) {
@@ -72,6 +73,7 @@ public final class Server extends AbstractCouchbaseConnect {
         Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
             .numKvConnections(kvEndpoints)
             .networkResolution(NetworkResolution.AUTO)
+            .maxHttpConnections(maxHttpConnections)
             .enableMutationTokens(false);
 
         Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig

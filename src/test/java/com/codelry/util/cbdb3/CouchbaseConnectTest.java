@@ -37,6 +37,25 @@ class CouchbaseConnectTest {
     Assertions.assertThrows(IllegalStateException.class, db::getCluster);
   }
 
+  @Test
+  void maxHttpConnectionsDefaultsTo64() {
+    Assertions.assertEquals(64, new CouchbaseConfig().getMaxHttpConnections());
+  }
+
+  @Test
+  void maxHttpConnectionsFromProperties() {
+    Properties properties = new Properties();
+    properties.setProperty(CouchbaseConfig.COUCHBASE_MAX_HTTP_CONNECTIONS, "32");
+    CouchbaseConfig config = new CouchbaseConfig().fromProperties(properties);
+    Assertions.assertEquals(32, config.getMaxHttpConnections());
+  }
+
+  @Test
+  void maxHttpConnectionsFluentSetter() {
+    CouchbaseConfig config = new CouchbaseConfig().maxHttpConnections(128);
+    Assertions.assertEquals(128, config.getMaxHttpConnections());
+  }
+
   private static Properties loadProperties(String resourceName) throws IOException {
     Properties properties = new Properties();
     ClassLoader loader = Thread.currentThread().getContextClassLoader();

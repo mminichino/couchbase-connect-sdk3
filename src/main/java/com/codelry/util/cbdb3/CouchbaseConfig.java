@@ -2,7 +2,9 @@ package com.codelry.util.cbdb3;
 
 import com.couchbase.client.java.manager.bucket.BucketType;
 import com.couchbase.client.java.manager.bucket.StorageBackend;
+
 import java.util.Properties;
+
 import static com.codelry.util.cbdb3.CouchbaseConnect.convertBucketType;
 import static com.codelry.util.cbdb3.CouchbaseConnect.convertStorageBackend;
 
@@ -24,6 +26,7 @@ public class CouchbaseConfig {
   public static final String COUCHBASE_KV_TIMEOUT = "couchbase.kvTimeout";
   public static final String COUCHBASE_CONNECT_TIMEOUT = "couchbase.connectTimeout";
   public static final String COUCHBASE_QUERY_TIMEOUT = "couchbase.queryTimeout";
+  public static final String COUCHBASE_MAX_HTTP_CONNECTIONS = "couchbase.maxHttpConnections";
   public static final String COUCHBASE_BUCKET_TYPE = "couchbase.bucketType";
   public static final String COUCHBASE_STORAGE_TYPE = "couchbase.storageBackend";
   public static final String COUCHBASE_QUICK_CONNECT = "couchbase.quickConnect";
@@ -78,8 +81,9 @@ public class CouchbaseConfig {
   private int maxParallelism = 0;
   private int kvEndpoints = 8;
   private int kvTimeout = 5;
-  private int connectTimeout = 15;
+  private int connectTimeout = 20;
   private int queryTimeout = 75;
+  private int maxHttpConnections = 64;
   private BucketType bucketType = BucketType.COUCHBASE;
   private StorageBackend bucketStorage = StorageBackend.COUCHSTORE;
   private int ttlSeconds = 0;
@@ -134,6 +138,11 @@ public class CouchbaseConfig {
 
   public CouchbaseConfig queryTimeout(final int timeout) {
     this.queryTimeout = timeout;
+    return this;
+  }
+
+  public CouchbaseConfig maxHttpConnections(final int count) {
+    this.maxHttpConnections = count;
     return this;
   }
 
@@ -281,6 +290,7 @@ public class CouchbaseConfig {
     this.kvTimeout = Integer.parseInt(properties.getProperty(COUCHBASE_KV_TIMEOUT, "5"));
     this.connectTimeout = Integer.parseInt(properties.getProperty(COUCHBASE_CONNECT_TIMEOUT, "15"));
     this.queryTimeout = Integer.parseInt(properties.getProperty(COUCHBASE_QUERY_TIMEOUT, "75"));
+    this.maxHttpConnections = Integer.parseInt(properties.getProperty(COUCHBASE_MAX_HTTP_CONNECTIONS, "64"));
     this.ttlSeconds = Integer.parseInt(properties.getProperty(COUCHBASE_TTL, "0"));
     this.bucketType = convertBucketType(properties.getProperty(COUCHBASE_BUCKET_TYPE, "couchbase"));
     this.bucketStorage = convertStorageBackend(properties.getProperty(COUCHBASE_STORAGE_TYPE, "couchstore"));
@@ -386,6 +396,10 @@ public class CouchbaseConfig {
 
   public int getQueryTimeout() {
     return queryTimeout;
+  }
+
+  public int getMaxHttpConnections() {
+    return maxHttpConnections;
   }
 
   public BucketType getBucketType() {

@@ -159,6 +159,14 @@ public interface CouchbaseConnect {
 
   boolean collectionExists(String bucketName, String scopeName, String collectionName);
 
+  void waitUntilCollectionReady();
+
+  void waitUntilCollectionReady(String bucketName, String scopeName, String collectionName);
+
+  void waitUntilCollectionQueryReady();
+
+  void waitUntilCollectionQueryReady(String bucketName, String scopeName, String collectionName);
+
   void createPrimaryIndex();
 
   void createPrimaryIndex(String bucketName, String scopeName, String collectionName);

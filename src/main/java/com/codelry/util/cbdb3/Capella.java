@@ -20,7 +20,8 @@ public final class Capella extends AbstractCouchbaseConnect {
   private String databaseName;
   private String streamHost;
 
-  private Capella() {}
+  private Capella() {
+  }
 
   public static Capella getInstance() {
     if (instance == null) {
@@ -58,6 +59,7 @@ public final class Capella extends AbstractCouchbaseConnect {
             .kvTimeout(kvTimeout)
             .connectTimeout(connectTimeout)
             .queryTimeout(queryTimeout)
+            .maxHttpConnections(maxHttpConnections)
             .build();
         cluster = CapellaConnect.connect(capellaCluster, capellaConfig);
         connectTarget = databaseName;

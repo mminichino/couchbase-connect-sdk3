@@ -77,6 +77,7 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   protected int kvTimeout;
   protected int connectTimeout;
   protected int queryTimeout;
+  protected int maxHttpConnections;
   protected final ObjectMapper mapper = new ObjectMapper();
   protected JsonNode clusterInfo = mapper.createObjectNode();
   protected String clusterVersion;
@@ -106,6 +107,7 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
     kvTimeout = config.getKvTimeout();
     connectTimeout = config.getConnectTimeout();
     queryTimeout = config.getQueryTimeout();
+    maxHttpConnections = config.getMaxHttpConnections();
     properties.clear();
     properties.putAll(config.getProperties());
   }
@@ -293,6 +295,26 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
     }).count();
   }
 
+  protected int defaultIndexReplicaCount() {
+    return Math.max(0, (int) getIndexNodeCount() - 1);
+  }
+
+  private void waitForBucketReady(String bucketName) {
+    cluster.bucket(bucketName).waitUntilReady(
+        Duration.ofSeconds(30),
+        waitUntilReadyOptions()
+            .serviceTypes(ServiceType.KV)
+            .desiredState(ClusterState.ONLINE));
+  }
+
+  private void waitForQueryReady(String bucketName) {
+    cluster.bucket(bucketName).waitUntilReady(
+        Duration.ofSeconds(60),
+        waitUntilReadyOptions()
+            .serviceTypes(ServiceType.QUERY)
+            .desiredState(ClusterState.ONLINE));
+  }
+
   @Override
   public List<String> listBuckets() {
     return new ArrayList<>(cluster.buckets().getAllBuckets().keySet());
@@ -311,7 +333,7 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   @Override
   public void clusterWait() {
     cluster.waitUntilReady(Duration.ofSeconds(30), waitUntilReadyOptions()
-        .serviceTypes(ServiceType.KV, ServiceType.QUERY, ServiceType.VIEWS)
+        .serviceTypes(ServiceType.KV)
         .desiredState(ClusterState.ONLINE));
     waitForClusterOperationsReady();
   }
@@ -517,13 +539,121 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   }
 
   @Override
+  public void waitUntilCollectionReady() {
+    waitUntilCollectionReady(bucketName, scopeName, collectionName);
+  }
+
+  @Override
+  public void waitUntilCollectionReady(String bucketName, String scopeName, String collectionName) {
+    waitForBucketReady(bucketName);
+    Collection collection = cluster.bucket(bucketName).scope(scopeName).collection(collectionName);
+    Duration timeout = Duration.ofSeconds(30);
+    Duration interval = Duration.ofMillis(200);
+    long deadline = System.nanoTime() + timeout.toNanos();
+    while (true) {
+      try {
+        collection.exists("__wait_until_collection_ready__");
+        return;
+      } catch (RuntimeException e) {
+        if (!isCollectionKvNotReady(e) || System.nanoTime() >= deadline) {
+          throw new RuntimeException("Collection is not KV ready: "
+              + keyspaceOf(bucketName, scopeName, collectionName), e);
+        }
+        sleep(interval);
+      }
+    }
+  }
+
+  @Override
+  public void waitUntilCollectionQueryReady() {
+    waitUntilCollectionQueryReady(bucketName, scopeName, collectionName);
+  }
+
+  @Override
+  public void waitUntilCollectionQueryReady(String bucketName, String scopeName, String collectionName) {
+    waitForQueryReady(bucketName);
+    waitUntilCollectionReady(bucketName, scopeName, collectionName);
+    String keyspace = keyspaceOf(bucketName, scopeName, collectionName);
+    Duration timeout = Duration.ofSeconds(30);
+    Duration interval = Duration.ofMillis(200);
+    long deadline = System.nanoTime() + timeout.toNanos();
+    while (true) {
+      try {
+        cluster.query("SELECT 1 FROM " + keyspace + " WHERE 1=0",
+            queryOptions().timeout(Duration.ofSeconds(5)));
+        return;
+      } catch (RuntimeException e) {
+        if (isCollectionQueryVisible(e)) {
+          return;
+        }
+        if (!isCollectionQueryNotReady(e) || System.nanoTime() >= deadline) {
+          throw new RuntimeException("Collection is not query ready: " + keyspace, e);
+        }
+        sleep(interval);
+      }
+    }
+  }
+
+  private static String keyspaceOf(String bucketName, String scopeName, String collectionName) {
+    return quoteIdentifier(bucketName) + "." + quoteIdentifier(scopeName) + "." + quoteIdentifier(collectionName);
+  }
+
+  private static String quoteIdentifier(String name) {
+    return "`" + name.replace("`", "``") + "`";
+  }
+
+  private static boolean isCollectionKvNotReady(RuntimeException error) {
+    if (error instanceof CollectionNotFoundException || error instanceof ScopeNotFoundException) {
+      return true;
+    }
+    String message = error.getMessage();
+    if (message == null) {
+      return false;
+    }
+    String lower = message.toLowerCase();
+    return lower.contains("collection not found")
+        || lower.contains("collection_not_found")
+        || lower.contains("unknown collection")
+        || lower.contains("scope not found")
+        || lower.contains("scope_not_found");
+  }
+
+  private static boolean isCollectionQueryVisible(RuntimeException error) {
+    String message = error.getMessage();
+    return message != null && message.toLowerCase().contains("no index available");
+  }
+
+  private static boolean isCollectionQueryNotReady(RuntimeException error) {
+    if (error instanceof CollectionNotFoundException
+        || error instanceof ScopeNotFoundException
+        || error instanceof ServiceNotAvailableException
+        || error instanceof TimeoutException) {
+      return true;
+    }
+    String message = error.getMessage();
+    if (message == null) {
+      return false;
+    }
+    String lower = message.toLowerCase();
+    return lower.contains("keyspace not found")
+        || lower.contains("collection not found")
+        || lower.contains("scope not found")
+        || lower.contains("bucket not found")
+        || lower.contains("query service is not available")
+        || lower.contains("service not available")
+        || lower.contains("endpoint_not_available")
+        || lower.contains("channel_closed")
+        || lower.contains("no_more_retries");
+  }
+
+  @Override
   public void createPrimaryIndex() {
-    createPrimaryIndexInternal(bucketName, scopeName, collectionName, bucketReplicas);
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, defaultIndexReplicaCount());
   }
 
   @Override
   public void createPrimaryIndex(String bucketName, String scopeName, String collectionName) {
-    createPrimaryIndexInternal(bucketName, scopeName, collectionName, bucketReplicas);
+    createPrimaryIndexInternal(bucketName, scopeName, collectionName, defaultIndexReplicaCount());
   }
 
   @Override
@@ -532,6 +662,7 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   }
 
   private void createPrimaryIndexInternal(String bucketName, String scopeName, String collectionName, int replicaCount) {
+    waitForBucketReady(bucketName);
     Bucket bucket = cluster.bucket(bucketName);
     Scope scope = bucket.scope(scopeName);
     Collection collection = scope.collection(collectionName);
@@ -551,12 +682,12 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
 
   @Override
   public void createSecondaryIndex(String indexName, List<String> indexKeys) {
-    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, bucketReplicas);
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, defaultIndexReplicaCount());
   }
 
   @Override
   public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys) {
-    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, bucketReplicas);
+    createSecondaryIndexInternal(bucketName, scopeName, collectionName, indexName, indexKeys, defaultIndexReplicaCount());
   }
 
   @Override
@@ -565,6 +696,7 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   }
 
   private void createSecondaryIndexInternal(String bucketName, String scopeName, String collectionName, String indexName, List<String> indexKeys, int replicaCount) {
+    waitForBucketReady(bucketName);
     Bucket bucket = cluster.bucket(bucketName);
     Scope scope = bucket.scope(scopeName);
     Collection collection = scope.collection(collectionName);
@@ -743,7 +875,8 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
     if (cluster == null) {
       throw new RuntimeException("Bucket is not connected");
     }
-    TypeRef<Map<String, Object>> typeRef = new TypeRef<Map<String, Object>>() {};
+    TypeRef<Map<String, Object>> typeRef = new TypeRef<Map<String, Object>>() {
+    };
     try {
       return cluster.reactive().query(queryString, queryOptions()
               .scanConsistency(QueryScanConsistency.REQUEST_PLUS)
@@ -762,7 +895,8 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   @Override
   public List<String> getStringList(JsonNode node) {
     try {
-      return mapper.readerFor(new TypeReference<List<String>>() {}).readValue(node);
+      return mapper.readerFor(new TypeReference<List<String>>() {
+      }).readValue(node);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
@@ -1000,7 +1134,7 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
       for (IndexData index : bucket.getIndexes()) {
         int replicas = index.getNumReplicas();
         if (replicas < 0) {
-          replicas = bucketReplicas;
+          replicas = defaultIndexReplicaCount();
         }
         final int replicaNum = replicas;
         try {
