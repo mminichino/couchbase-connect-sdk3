@@ -22,7 +22,7 @@ public class ServerDriver2Test extends AbstractServerPerClassTestcontainerTest {
     Assertions.assertTrue(result);
     db.createScope();
     db.createCollection();
-    db.clusterWait();
+    db.waitUntilCollectionQueryReady();
     db.createPrimaryIndex();
     db.createSecondaryIndex("idx_test", List.of("data"));
     ObjectNode doc = new ObjectMapper().createObjectNode();

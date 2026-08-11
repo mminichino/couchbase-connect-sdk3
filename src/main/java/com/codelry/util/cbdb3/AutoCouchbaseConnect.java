@@ -22,7 +22,8 @@ final class AutoCouchbaseConnect implements CouchbaseConnect {
   private static final AutoCouchbaseConnect INSTANCE = new AutoCouchbaseConnect();
   private volatile CouchbaseConnect delegate;
 
-  private AutoCouchbaseConnect() {}
+  private AutoCouchbaseConnect() {
+  }
 
   static AutoCouchbaseConnect getInstance() {
     return INSTANCE;
@@ -294,6 +295,26 @@ final class AutoCouchbaseConnect implements CouchbaseConnect {
   }
 
   @Override
+  public void waitUntilCollectionReady() {
+    requireDelegate().waitUntilCollectionReady();
+  }
+
+  @Override
+  public void waitUntilCollectionReady(String bucketName, String scopeName, String collectionName) {
+    requireDelegate().waitUntilCollectionReady(bucketName, scopeName, collectionName);
+  }
+
+  @Override
+  public void waitUntilCollectionQueryReady() {
+    requireDelegate().waitUntilCollectionQueryReady();
+  }
+
+  @Override
+  public void waitUntilCollectionQueryReady(String bucketName, String scopeName, String collectionName) {
+    requireDelegate().waitUntilCollectionQueryReady(bucketName, scopeName, collectionName);
+  }
+
+  @Override
   public void createPrimaryIndex() {
     requireDelegate().createPrimaryIndex();
   }
@@ -315,13 +336,13 @@ final class AutoCouchbaseConnect implements CouchbaseConnect {
 
   @Override
   public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName,
-      List<String> indexKeys) {
+                                   List<String> indexKeys) {
     requireDelegate().createSecondaryIndex(bucketName, scopeName, collectionName, indexName, indexKeys);
   }
 
   @Override
   public void createSecondaryIndex(String bucketName, String scopeName, String collectionName, String indexName,
-      List<String> indexKeys, int replicaCount) {
+                                   List<String> indexKeys, int replicaCount) {
     requireDelegate().createSecondaryIndex(bucketName, scopeName, collectionName, indexName, indexKeys, replicaCount);
   }
 

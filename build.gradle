@@ -5,10 +5,11 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'org.jreleaser' version '1.24.0'
+    id 'distribution'
 }
 
 group = 'com.codelry.util'
-version = '1.2.2'
+version = '1.2.3'
 
 repositories {
     mavenCentral()
@@ -30,7 +31,7 @@ dependencies {
     implementation 'com.couchbase.client:java-client:3.12.0'
     implementation 'com.couchbase.client:dcp-client:0.57.0'
     implementation 'com.codelry.util:restfull-core:1.0.5'
-    implementation 'com.codelry.util:capella-api:1.2.2'
+    implementation 'com.codelry.util:capella-api:1.2.3'
 }
 
 java {
@@ -121,6 +122,14 @@ publishing {
 }
 
 jreleaser {
+    files {
+        artifact {
+            path = "build/libs/${rootProject.name}-${rootProject.version}.jar"
+        }
+        artifact {
+            path = "build/distributions/${rootProject.name}-${rootProject.version}.zip"
+        }
+    }
     signing {
         pgp {
             active = 'ALWAYS'
@@ -141,4 +150,36 @@ jreleaser {
             }
         }
     }
+}
+
+distributions {
+    main {
+        distributionBaseName = project.name
+        contents {
+            into('lib') {
+                from(tasks.jar)
+                from(configurations.runtimeClasspath)
+            }
+            into('docs') {
+                from(tasks.sourcesJar)
+                from(tasks.javadocJar)
+            }
+            from('.') {
+                include 'README*', 'LICENSE*'
+            }
+        }
+    }
+}
+
+tasks.named('assemble').configure {
+    dependsOn tasks.named('distZip')
+}
+
+tasks.named('jreleaserDeploy').configure {
+    dependsOn tasks.named('publish')
+}
+
+tasks.named('jreleaserRelease').configure {
+    dependsOn tasks.named('jar')
+    dependsOn tasks.named('distZip')
 }
