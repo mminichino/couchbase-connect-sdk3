@@ -9,7 +9,7 @@ plugins {
 }
 
 group = 'com.codelry.util'
-version = '1.2.3'
+version = '1.2.5'
 
 repositories {
     mavenCentral()
@@ -91,7 +91,7 @@ publishing {
             pom {
                 name = project.name
                 description = 'Couchbase Connect'
-                url = 'https://github.com/mminichino/couchbase-connect'
+                url = 'https://github.com/mminichino/couchbase-connect-sdk3.git'
                 inceptionYear = '2024'
                 licenses {
                     license {
@@ -106,9 +106,9 @@ publishing {
                     }
                 }
                 scm {
-                    connection = 'scm:git:https://github.com/mminichino/couchbase-connect.git'
-                    developerConnection = 'scm:git:ssh://git@github.com/mminichino/couchbase-connect.git'
-                    url = 'https://github.com/mminichino/couchbase-connect'
+                    connection = 'scm:git:https://github.com/mminichino/couchbase-connect-sdk3.git'
+                    developerConnection = 'scm:git:ssh://git@github.com:mminichino/couchbase-connect-sdk3.git'
+                    url = 'https://github.com/mminichino/couchbase-connect-sdk3.git'
                 }
             }
         }
