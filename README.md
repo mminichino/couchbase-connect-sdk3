@@ -12,7 +12,7 @@ Java helper around the Couchbase Java SDK 3.x for connecting to **Couchbase Serv
 **Gradle**
 
 ```gradle
-implementation 'com.codelry.util:couchbase-connect-sdk3:1.2.3'
+implementation 'com.codelry.util:couchbase-connect-sdk3:1.2.5'
 ```
 
 **Maven**
@@ -21,7 +21,7 @@ implementation 'com.codelry.util:couchbase-connect-sdk3:1.2.3'
 <dependency>
   <groupId>com.codelry.util</groupId>
   <artifactId>couchbase-connect-sdk3</artifactId>
-  <version>1.2.3</version>
+  <version>1.2.5</version>
 </dependency>
 ```
 
