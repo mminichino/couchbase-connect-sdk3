@@ -154,7 +154,18 @@ final class ClusterCreateSupport {
       String password,
       List<String> services,
       Map<String, Integer> quotas) {
-    String clusterHostname = clusterInitHostname(endpoint.host());
+    initializeSingleNodeCluster(endpoint, username, password, services, quotas, endpoint.host());
+  }
+
+  static void initializeSingleNodeCluster(
+      ClusterRestEndpoint endpoint,
+      String username,
+      String password,
+      List<String> services,
+      Map<String, Integer> quotas,
+      String advertiseHostname) {
+    String clusterHostname = clusterInitHostname(
+        advertiseHostname != null && !advertiseHostname.isBlank() ? advertiseHostname : endpoint.host());
     Map<String, String> fields = new LinkedHashMap<>();
     fields.put("hostname", clusterHostname);
     fields.put("username", username);
@@ -168,7 +179,8 @@ final class ClusterCreateSupport {
   }
 
   static String allowedHosts(String clusterHostname) {
-    return clusterHostname;
+    // Allow clients on other Docker network addresses (e.g. Cloud Native Gateway).
+    return "*";
   }
 
   static String clusterInitHostname(String host) {

@@ -19,6 +19,7 @@ public class CouchbaseConfig {
   public static final String COUCHBASE_ROOT_CERTIFICATE = "couchbase.ca.cert";
   public static final String COUCHBASE_KEYSTORE_TYPE = "couchbase.keystore.type";
   public static final String COUCHBASE_SSL_MODE = "couchbase.sslMode";
+  public static final String COUCHBASE_SSL_VERIFY = "couchbase.sslVerify";
   public static final String COUCHBASE_REPLICA_NUM = "couchbase.replicaNum";
   public static final String COUCHBASE_TTL = "couchbase.ttlSeconds";
   public static final String COUCHBASE_MAX_PARALLELISM = "couchbase.maxParallelism";
@@ -32,6 +33,7 @@ public class CouchbaseConfig {
   public static final String COUCHBASE_QUICK_CONNECT = "couchbase.quickConnect";
   public static final String COUCHBASE_SOFT_FAILURE = "couchbase.softFailure";
   public static final String COUCHBASE_DEBUG_MODE = "couchbase.debug";
+  public static final String COUCHBASE_PROTOSTELLAR = "couchbase.protostellar";
 
   public static final String CAPELLA_ORGANIZATION_NAME = "capella.organization.name";
   public static final String CAPELLA_ORGANIZATION_ID = "capella.organization.id";
@@ -73,6 +75,7 @@ public class CouchbaseConfig {
   private String clientCert;
   private KeyStoreType keyStoreType = KeyStoreType.PKCS12;
   private Boolean sslMode = DEFAULT_SSL_MODE;
+  private Boolean sslVerify = true;
   private Boolean enableDebug = false;
   private String bucketName;
   private String scopeName;
@@ -89,6 +92,7 @@ public class CouchbaseConfig {
   private int ttlSeconds = 0;
   private Boolean basic = false;
   private Boolean softFailure = false;
+  private Boolean protostellar = false;
   private final Properties properties = new Properties();
 
   public CouchbaseConfig ttl(int value) {
@@ -183,6 +187,11 @@ public class CouchbaseConfig {
     return this;
   }
 
+  public CouchbaseConfig sslVerify(final Boolean mode) {
+    this.sslVerify = mode;
+    return this;
+  }
+
   public CouchbaseConfig bucket(final String name) {
     this.bucketName = name;
     return this;
@@ -210,6 +219,11 @@ public class CouchbaseConfig {
 
   public CouchbaseConfig softFailure(final Boolean mode) {
     this.softFailure = mode;
+    return this;
+  }
+
+  public CouchbaseConfig protostellar(final Boolean mode) {
+    this.protostellar = mode;
     return this;
   }
 
@@ -284,6 +298,7 @@ public class CouchbaseConfig {
     this.scopeName = properties.getProperty(COUCHBASE_SCOPE, "_default");
     this.collectionName = properties.getProperty(COUCHBASE_COLLECTION, "_default");
     this.sslMode = properties.getProperty(COUCHBASE_SSL_MODE, DEFAULT_SSL_SETTING).equals("true");
+    this.sslVerify = !properties.getProperty(COUCHBASE_SSL_VERIFY, "true").equals("false");
     this.bucketReplicas = Integer.parseInt(properties.getProperty(COUCHBASE_REPLICA_NUM, "1"));
     this.maxParallelism = Integer.parseInt(properties.getProperty(COUCHBASE_MAX_PARALLELISM, "0"));
     this.kvEndpoints = Integer.parseInt(properties.getProperty(COUCHBASE_KV_ENDPOINTS, "8"));
@@ -297,6 +312,8 @@ public class CouchbaseConfig {
     this.basic = properties.getProperty(COUCHBASE_QUICK_CONNECT, "false").equals("true");
     this.softFailure = properties.getProperty(COUCHBASE_SOFT_FAILURE, "false").equals("true");
     this.enableDebug = properties.getProperty(COUCHBASE_DEBUG_MODE, "false").equals("true");
+    this.protostellar = properties.getProperty(COUCHBASE_PROTOSTELLAR, "false").equals("true")
+        || hostname.startsWith("couchbase2://");
     applyCapellaFromProperties(properties);
     this.properties.putAll(properties);
     return this;
@@ -370,6 +387,10 @@ public class CouchbaseConfig {
     return sslMode;
   }
 
+  public Boolean getSslVerify() {
+    return sslVerify;
+  }
+
   public Boolean getEnableDebug() {
     return enableDebug;
   }
@@ -420,6 +441,10 @@ public class CouchbaseConfig {
 
   public Boolean getSoftFailure() {
     return softFailure;
+  }
+
+  public Boolean getProtostellar() {
+    return protostellar;
   }
 
   public Properties getProperties() {

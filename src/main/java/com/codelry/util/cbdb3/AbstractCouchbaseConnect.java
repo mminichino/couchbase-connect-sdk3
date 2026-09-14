@@ -70,6 +70,7 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
   protected String scopeName;
   protected String collectionName;
   protected Boolean useSsl;
+  protected boolean useProtostellar;
   protected int adminPort;
   protected int ttlSeconds;
   protected int maxParallelism;
@@ -95,6 +96,8 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
     password = config.getPassword();
     enableDebug = config.getEnableDebug();
     useSsl = config.getSslMode();
+    useProtostellar = Boolean.TRUE.equals(config.getProtostellar())
+        || (connectTarget != null && connectTarget.startsWith("couchbase2://"));
     ttlSeconds = config.getTtlSeconds();
     bucketName = config.getBucketName();
     scopeName = config.getScopeName();
@@ -216,11 +219,19 @@ abstract class AbstractCouchbaseConnect implements CouchbaseConnect {
 
   @Override
   public CouchbaseStream stream(String bucketName) {
+    if (useProtostellar) {
+      throw new UnsupportedOperationException(
+          "DCP streaming is not supported over Protostellar (couchbase2://)");
+    }
     return new CouchbaseStream(streamHostname(), username, password, bucketName, true);
   }
 
   @Override
   public CouchbaseStream stream(String bucketName, String scopeName, String collectionName) {
+    if (useProtostellar) {
+      throw new UnsupportedOperationException(
+          "DCP streaming is not supported over Protostellar (couchbase2://)");
+    }
     return new CouchbaseStream(streamHostname(), username, password, bucketName, true, scopeName, collectionName);
   }
 
