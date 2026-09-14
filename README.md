@@ -46,6 +46,33 @@ CouchbaseConfig config = new CouchbaseConfig()
 db.connect(config);
 ```
 
+### Cloud Native Gateway (Protostellar)
+
+Connect through Cloud Native Gateway with the Protostellar protocol (`couchbase2://`). Requires Java SDK 3.5+ (this package uses 3.12.x) and Couchbase Autonomous Operator 2.6.1+ / Cloud Native Gateway. TLS is always enabled.
+
+```java
+CouchbaseConnect db = Server.getInstance();
+CouchbaseConfig config = new CouchbaseConfig()
+    .host("cng.example.com:18098")
+    .username("Administrator")
+    .password("password")
+    .bucket("data")
+    .protostellar(true)
+    .sslVerify(false); // self-signed CNG certificate (dev only)
+
+db.connect(config);
+```
+
+Prefer trusting the CNG CA when available (`.rootCert("/path/to/cng-ca.pem")`) instead of disabling verification.
+
+You can also pass a full `couchbase2://` connection string as the hostname; Protostellar mode is detected automatically:
+
+```java
+.host("couchbase2://cng.example.com:18098")
+```
+
+Client certificate authentication and DCP streaming are not supported over Protostellar.
+
 ### Couchbase Capella
 
 Capella requires an API token plus project and database identifiers. The connection string is resolved through the Capella API.
@@ -197,7 +224,9 @@ Fluent setters on `CouchbaseConfig` match the property names below.
 | `couchbase.bucket` | `default` | Bucket name |
 | `couchbase.scope` | `_default` | Scope name |
 | `couchbase.collection` | `_default` | Collection name |
-| `couchbase.sslMode` | `true` | Use TLS (`couchbases://`) |
+| `couchbase.sslMode` | `true` | Use TLS (`couchbases://`); always on for Protostellar |
+| `couchbase.sslVerify` | `true` | Verify TLS certificates; set `false` for self-signed CNG (dev) |
+| `couchbase.protostellar` | `false` | Use Protostellar / Cloud Native Gateway (`couchbase2://`) |
 | `couchbase.replicaNum` | `1` | Bucket replica count |
 | `couchbase.kvEndpoints` | `8` | KV connections per node |
 | `couchbase.kvTimeout` | `5` | KV timeout (seconds) |

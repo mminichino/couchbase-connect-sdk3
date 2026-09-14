@@ -27,6 +27,8 @@ import java.util.function.Consumer;
 
 /**
  * Couchbase Server connection using a hostname-based connect string.
+ * Supports the classic {@code couchbase://}/{@code couchbases://} protocols and
+ * the Protostellar protocol ({@code couchbase2://}) used by Cloud Native Gateway.
  */
 public final class Server extends AbstractCouchbaseConnect {
   private static Server instance;
@@ -47,10 +49,23 @@ public final class Server extends AbstractCouchbaseConnect {
     applyConfig(config);
     enableDebugLogging();
 
-    String couchbasePrefix = useSsl ? "couchbases://" : "couchbase://";
-    adminPort = useSsl ? 18091 : 8091;
-    String connectString = couchbasePrefix + connectTarget;
+    String seedHost = stripConnectionScheme(connectTarget);
+    connectTarget = seedHost;
+    String couchbasePrefix;
+    if (useProtostellar) {
+      // Cloud Native Gateway requires TLS; Protostellar is selected via couchbase2://.
+      couchbasePrefix = "couchbase2://";
+      useSsl = true;
+      adminPort = 18098;
+    } else {
+      couchbasePrefix = useSsl ? "couchbases://" : "couchbase://";
+      adminPort = useSsl ? 18091 : 8091;
+    }
+    String connectString = couchbasePrefix + seedHost;
     boolean softFailure = config.getSoftFailure();
+    boolean sslVerify = !Boolean.FALSE.equals(config.getSslVerify());
+    // Protostellar/CNG with a self-signed cert and no trusted CA: skip verification.
+    boolean skipCertValidation = !sslVerify || (useProtostellar && config.getRootCert() == null);
 
     try {
       if (cluster == null) {
@@ -58,23 +73,28 @@ public final class Server extends AbstractCouchbaseConnect {
         KeyStoreType keyStoreType = config.getKeyStoreType();
         String rootCert = config.getRootCert();
 
+        if (useProtostellar && clientCert != null) {
+          throw new IllegalArgumentException(
+              "Client certificate authentication is not supported over Protostellar (couchbase2://)");
+        }
+
         Consumer<SecurityConfig.Builder> secConfiguration;
-        if (rootCert != null) {
+        if (skipCertValidation) {
+          logger.debug("TLS certificate verification disabled");
+          secConfiguration = securityConfig -> securityConfig
+              .enableTls(Boolean.TRUE.equals(useSsl) || useProtostellar)
+              .enableCertificateVerification(false)
+              .enableHostnameVerification(false);
+        } else if (rootCert != null) {
           secConfiguration = securityConfig -> securityConfig
               .enableTls(true)
               .trustCertificate(Paths.get(rootCert));
         } else {
           secConfiguration = securityConfig -> securityConfig
-              .enableTls(useSsl)
+              .enableTls(Boolean.TRUE.equals(useSsl))
               .enableHostnameVerification(false)
               .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
         }
-
-        Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
-            .numKvConnections(kvEndpoints)
-            .networkResolution(NetworkResolution.AUTO)
-            .maxHttpConnections(maxHttpConnections)
-            .enableMutationTokens(false);
 
         Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
             .kvTimeout(Duration.ofSeconds(kvTimeout))
@@ -90,13 +110,24 @@ public final class Server extends AbstractCouchbaseConnect {
           authenticator = PasswordAuthenticator.create(username, password);
         }
 
-        logger.debug("connecting as user {}", username);
+        logger.debug("connecting as user {} via {}", username, couchbasePrefix);
 
-        environment = ClusterEnvironment.builder()
+        ClusterEnvironment.Builder envBuilder = ClusterEnvironment.builder()
             .timeoutConfig(timeOutConfiguration)
-            .ioConfig(ioConfiguration)
-            .securityConfig(secConfiguration)
-            .build();
+            .securityConfig(secConfiguration);
+
+        // numKvConnections / networkResolution are ignored for couchbase2:// but remain
+        // useful for the classic protocol.
+        if (!useProtostellar) {
+          Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
+              .numKvConnections(kvEndpoints)
+              .networkResolution(NetworkResolution.AUTO)
+              .maxHttpConnections(maxHttpConnections)
+              .enableMutationTokens(false);
+          envBuilder.ioConfig(ioConfiguration);
+        }
+
+        environment = envBuilder.build();
 
         cluster = Cluster.connect(connectString,
             ClusterOptions.clusterOptions(authenticator).environment(environment));
@@ -112,6 +143,46 @@ public final class Server extends AbstractCouchbaseConnect {
     }
   }
 
+  /**
+   * Removes a known Couchbase connection scheme from a hostname if present.
+   */
+  static String stripConnectionScheme(String host) {
+    if (host == null || host.isBlank()) {
+      return host;
+    }
+    if (host.startsWith("couchbase2://")) {
+      return host.substring("couchbase2://".length());
+    }
+    if (host.startsWith("couchbases://")) {
+      return host.substring("couchbases://".length());
+    }
+    if (host.startsWith("couchbase://")) {
+      return host.substring("couchbase://".length());
+    }
+    return host;
+  }
+
+  @Override
+  protected void loadClusterInfo() {
+    if (useProtostellar) {
+      // Manager HTTP (/pools/default) and Health Check are not available over Protostellar.
+      logger.debug("Skipping manager cluster info for Protostellar connection");
+      majorRevision = 7;
+      minorRevision = 2;
+      patchRevision = 2;
+      return;
+    }
+    super.loadClusterInfo();
+  }
+
+  @Override
+  protected int getMemQuota() {
+    if (useProtostellar) {
+      return 128;
+    }
+    return super.getMemQuota();
+  }
+
   @Override
   public void disconnect() {
     bucket = null;
@@ -119,6 +190,10 @@ public final class Server extends AbstractCouchbaseConnect {
       cluster.disconnect();
     }
     cluster = null;
+    if (environment != null) {
+      environment.shutdown();
+      environment = null;
+    }
     clusterInfo = mapper.createObjectNode();
   }
 

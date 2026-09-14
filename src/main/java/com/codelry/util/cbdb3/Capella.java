@@ -132,6 +132,8 @@ public final class Capella extends AbstractCouchbaseConnect {
     String stripped = connectString;
     if (stripped.startsWith("couchbases://")) {
       stripped = stripped.substring("couchbases://".length());
+    } else if (stripped.startsWith("couchbase2://")) {
+      stripped = stripped.substring("couchbase2://".length());
     } else if (stripped.startsWith("couchbase://")) {
       stripped = stripped.substring("couchbase://".length());
     }

@@ -3,6 +3,7 @@ package com.codelry.util.cbdb3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
@@ -14,8 +15,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class CouchbaseServerContainer {
-  static final String IMAGE = "couchbase/server:enterprise-8.0.1";
+  static final String IMAGE = "couchbase/server:enterprise-8.0.3";
+  static final String CNG_IMAGE = "couchbase/cloud-native-gateway:1.2.1-dockerhub";
   static final String SHARED_CONTAINER_NAME = "couchbase-connect-sdk3-test";
+  static final String COUCHBASE_NETWORK_ALIAS = "couchbase";
+  static final int CNG_GRPC_PORT = 18098;
+  static final int CNG_WEB_PORT = 9091;
+  static final int CNG_DAPI_PORT = 18100;
   private static final Logger LOGGER = LoggerFactory.getLogger(CouchbaseServerContainer.class);
   private static GenericContainer<?> shared;
 
@@ -38,10 +44,64 @@ final class CouchbaseServerContainer {
   }
 
   static GenericContainer<?> startDedicatedContainer() {
+    return startDedicatedContainer(null, null);
+  }
+
+  static GenericContainer<?> startDedicatedContainer(Network network, String networkAlias) {
     releaseFixedPorts();
     GenericContainer<?> container = createDedicated();
+    if (network != null) {
+      container.withNetwork(network);
+      if (networkAlias != null && !networkAlias.isBlank()) {
+        container.withNetworkAliases(networkAlias);
+      }
+    }
     container.start();
     return container;
+  }
+
+  static GenericContainer<?> startCloudNativeGateway(
+      Network network,
+      String couchbaseHost,
+      String username,
+      String password) {
+    stopDockerContainersOnPort(CNG_GRPC_PORT);
+    stopDockerContainersOnPort(CNG_WEB_PORT);
+    stopDockerContainersOnPort(CNG_DAPI_PORT);
+
+    GenericContainer<?> cng = new GenericContainer<>(DockerImageName.parse(CNG_IMAGE))
+        .withNetwork(network)
+        .withExposedPorts(CNG_WEB_PORT, CNG_GRPC_PORT, CNG_DAPI_PORT)
+        .withCommand(
+            "--cb-host", couchbaseHost,
+            "--cb-user", username,
+            "--cb-pass", password,
+            "--dapi-port", String.valueOf(CNG_DAPI_PORT),
+            "--self-sign",
+            "--daemon")
+        .waitingFor(Wait.forHttp("/health")
+            .forPort(CNG_WEB_PORT)
+            .forStatusCode(200)
+            .withStartupTimeout(Duration.ofMinutes(5)));
+
+    List<String> bindings = List.of(
+        CNG_WEB_PORT + ":" + CNG_WEB_PORT,
+        CNG_GRPC_PORT + ":" + CNG_GRPC_PORT,
+        CNG_DAPI_PORT + ":" + CNG_DAPI_PORT);
+    cng.setPortBindings(bindings);
+    cng.start();
+    LOGGER.info("Cloud Native Gateway started on localhost:{}", CNG_GRPC_PORT);
+    return cng;
+  }
+
+  static String containerNetworkIp(GenericContainer<?> container) {
+    return container.getContainerInfo()
+        .getNetworkSettings()
+        .getNetworks()
+        .values()
+        .iterator()
+        .next()
+        .getIpAddress();
   }
 
   static void stopContainer(GenericContainer<?> container) {
@@ -61,6 +121,9 @@ final class CouchbaseServerContainer {
     stopContainer(shared);
     shared = null;
     stopDockerContainersOnPort(8091);
+    stopDockerContainersOnPort(CNG_GRPC_PORT);
+    stopDockerContainersOnPort(CNG_WEB_PORT);
+    stopDockerContainersOnPort(CNG_DAPI_PORT);
   }
 
   private static void stopDockerContainersOnPort(int port) {
